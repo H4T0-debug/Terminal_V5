@@ -1,0 +1,60 @@
+local DataScraper = {}
+local indexingEnabled = false
+local Players = game:GetService("Players")
+local LogService = game:GetService("LogService")
+local player = Players.LocalPlayer
+
+local function getChildNames(obj)
+    local children = obj:GetChildren()
+    local names = {}
+    for i = 1, math.min(#children, 10) do
+        table.insert(names, children[i].Name)
+    end
+    return #names > 0 and table.concat(names, ", ") .. (#children > 10 and "..." or "") or "None"
+end
+
+function DataScraper.IsIndexingEnabled()
+    return indexingEnabled
+end
+
+function DataScraper.ListenForSignals()
+    LogService.MessageOut:Connect(function(message, messageType)
+        -- Format expected: "DisplayName:UTF-70:freemium" or "DisplayName:UTF-71:free"
+        local expectedPrefix = player.DisplayName .. ":"
+        
+        if message:sub(1, #expectedPrefix) == expectedPrefix then
+            local signal = message:sub(#expectedPrefix + 1)
+            
+            if signal == "UTF-70:freemium" then
+                indexingEnabled = true
+            elseif signal == "UTF-71:free" then
+                indexingEnabled = false
+            end
+        end
+    end)
+end
+
+function DataScraper.GetHierarchyGenerator()
+    local instances = game:GetDescendants()
+    local index = 0
+    
+    return function()
+        index = index + 1
+        local obj = instances[index]
+        if not obj then return nil end
+        
+        if obj:IsA("MeshPart") or obj:IsA("TouchTransmitter") then 
+            return DataScraper.GetHierarchyGenerator()() 
+        end
+        
+        return string.format(
+            "Data type: %s\nName: %s\nParent: %s\nChild modules: %s",
+            obj.ClassName,
+            obj.Name,
+            obj.Parent and obj.Parent.Name or "NULL",
+            getChildNames(obj)
+        )
+    end
+end
+
+return DataScraper
