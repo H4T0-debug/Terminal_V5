@@ -1,0 +1,53 @@
+local DataScraper = {}
+local indexingEnabled = false
+
+local function getChildNames(obj)
+    local children = obj:GetChildren()
+    local names = {}
+    for i = 1, math.min(#children, 10) do -- Limit to first 10 children to save tokens
+        table.insert(names, children[i].Name)
+    end
+    return #names > 0 and table.concat(names, ", ") .. (#children > 10 and "..." or "") or "None"
+end
+
+function DataScraper.IsIndexingEnabled()
+    return indexingEnabled
+end
+
+function DataScraper.ListenForSignals(outputLabel)
+    outputLabel:GetPropertyChangedSignal("Text"):Connect(function()
+        local text = outputLabel.Text
+        -- Look for the specific symbols in the last added line
+        if text:find("⟁") then
+            indexingEnabled = true
+        elseif text:find("𒀱") then
+            indexingEnabled = false
+        end
+    end)
+end
+
+function DataScraper.GetHierarchyGenerator()
+    local instances = game:GetDescendants()
+    local index = 0
+    
+    return function()
+        index = index + 1
+        local obj = instances[index]
+        if not obj then return nil end
+        
+        -- Filter out common noise to keep the AI focused
+        if obj:IsA("MeshPart") or obj:IsA("TouchTransmitter") then 
+            return DataScraper.GetHierarchyGenerator()() 
+        end
+        
+        return string.format(
+            "Data type: %s\nName: %s\nParent: %s\nChild modules: %s",
+            obj.ClassName,
+            obj.Name,
+            obj.Parent and obj.Parent.Name or "NULL",
+            getChildNames(obj)
+        )
+    end
+end
+
+return DataScraper
