@@ -17,43 +17,69 @@ function DataScraper.IsIndexingEnabled()
     return indexingEnabled
 end
 
+-- Improved signal detection logic
+local function processMessage(message)
+    local displayName = player.DisplayName
+    -- Use string.find for a "fuzzy" match in case of timestamps or console formatting
+    -- Looking for: "DisplayName:UTF-70:freemium"
+    if message:find(displayName) then
+        if message:find("UTF%-70:freemium") then
+            indexingEnabled = true
+            warn("[DATA INDEX]: SIGNAL RECEIVED - STARTING SCRAPER")
+        elseif message:find("UTF%-71:free") then
+            indexingEnabled = false
+            warn("[DATA INDEX]: SIGNAL RECEIVED - STOPPING SCRAPER")
+        end
+    end
+end
+
 function DataScraper.ListenForSignals()
+    -- Method 1: Real-time listener
     LogService.MessageOut:Connect(function(message, messageType)
-        -- Format expected: "DisplayName:UTF-70:freemium" or "DisplayName:UTF-71:free"
-        local expectedPrefix = player.DisplayName .. ":"
-        
-        if message:sub(1, #expectedPrefix) == expectedPrefix then
-            local signal = message:sub(#expectedPrefix + 1)
-            
-            if signal == "UTF-70:freemium" then
-                indexingEnabled = true
-            elseif signal == "UTF-71:free" then
-                indexingEnabled = false
+        processMessage(message)
+    end)
+    
+    -- Method 2: Periodic history check (Backup in case MessageOut is missed)
+    task.spawn(function()
+        while true do
+            local logs = LogService:GetLogHistory()
+            -- We check the last few logs to see if our signal is there
+            for i = #logs, math.max(1, #logs - 5), -1 do
+                processMessage(logs[i].message)
             end
+            task.wait(1) 
         end
     end)
 end
 
 function DataScraper.GetHierarchyGenerator()
+    -- Pre-calculate descendants to avoid heavy calls in the loop
     local instances = game:GetDescendants()
     local index = 0
     
     return function()
         index = index + 1
         local obj = instances[index]
+        
+        -- If we hit the end, restart or return nil
         if not obj then return nil end
         
-        if obj:IsA("MeshPart") or obj:IsA("TouchTransmitter") then 
-            return DataScraper.GetHierarchyGenerator()() 
+        -- Filter out noise (Physics/Touch sensors)
+        if obj:IsA("MeshPart") or obj:IsA("TouchTransmitter") or obj:IsA("BasePart") and obj.Transparency == 1 then 
+            return DataScraper.GetHierarchyGenerator()() -- Skip and get next
         end
         
-        return string.format(
-            "Data type: %s\nName: %s\nParent: %s\nChild modules: %s",
-            obj.ClassName,
-            obj.Name,
-            obj.Parent and obj.Parent.Name or "NULL",
-            getChildNames(obj)
-        )
+        local success, result = pcall(function()
+            return string.format(
+                "Data type: %s\nName: %s\nParent: %s\nChild modules: %s",
+                obj.ClassName,
+                obj.Name,
+                obj.Parent and obj.Parent.Name or "NULL",
+                getChildNames(obj)
+            )
+        end)
+        
+        return success and result or nil
     end
 end
 
