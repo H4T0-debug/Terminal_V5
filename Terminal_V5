@@ -18,7 +18,16 @@ _G.TERMINAL_KEY = getLocalKey()
 -- 2. Load the main script from GitHub
 if _G.TERMINAL_KEY then
     print("[SYSTEM]: Key validated. Loading Terminal V5.1...")
-    -- Bootloader logic preserved
+    
+    local githubUrl = "https://raw.githubusercontent.com/YourUsername/YourRepo/main/terminal_v5.lua"
+    
+    local success, err = pcall(function()
+        -- loadstring(game:HttpGet(githubUrl))() -- Bootloader logic
+    end)
+    
+    if not success then
+        warn("[SYSTEM ERROR]: Failed to load from GitHub: " .. tostring(err))
+    end
 else
     warn("[SYSTEM]: Boot aborted due to missing API Key.")
 end
@@ -41,6 +50,9 @@ local shieldInstance = nil
 
 -- --- DATA SCRAPER INTEGRATION ---
 local DataScraper = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/DataIndex_V5"))()
+
+-- --- LOADSTRING CONVERTER INTEGRATION (UPDATED LINK TO LOADSTRINGV5) ---
+local LoadstringConverter = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/loadstringV5"))()
 
 -- --- STATE MANAGER ---
 local states = {
@@ -192,7 +204,7 @@ end
 
 local cmdPanelBtn = createSidebarBtn("CMD")
 local terminPanelBtn = createSidebarBtn("Termin")
-local bloxPanelBtn = createSidebarBtn("ScriptBlox") -- NEW BUTTON
+local bloxPanelBtn = createSidebarBtn("ScriptBlox")
 
 -- --- CMD PANEL ---
 local cmdPanel = Instance.new("Frame", main)
@@ -567,9 +579,21 @@ local function createShield()
     else printMsg("Error: Shield load failed.", false, true) end
 end
 
-local function executeCommand(raw)
-    raw = raw:lower():gsub("^%s+", ""):gsub("%s+$", "")
-    if raw == "" then return end
+local function executeCommand(rawInput)
+    local originalRaw = rawInput:gsub("^%s+", ""):gsub("%s+$", "")
+    if originalRaw == "" then return end
+
+    -- Intercept with the Loadstring Converter Module (loadstringV5)
+    if LoadstringConverter then
+        local wasHandled, errorResult = pcall(function()
+            return LoadstringConverter.CleanAndExecute(originalRaw, printMsg)
+        end)
+        if wasHandled and errorResult then
+            return 
+        end
+    end
+
+    local raw = originalRaw:lower()
     printMsg("$ " .. raw, false)
     local found = false
     
