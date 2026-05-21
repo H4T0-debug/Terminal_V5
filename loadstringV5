@@ -1,0 +1,52 @@
+local LoadstringConverter = {}
+
+function LoadstringConverter.CleanAndExecute(inputStr, printMsgCallback)
+    -- Clean the string
+    local str = inputStr:gsub("^%s+", ""):gsub("%s+$", "")
+    
+    -- Check if it's already an executable loadstring statement
+    if str:match("^loadstring%s*%(") then
+        printMsgCallback("Executing direct loadstring statement...", true)
+        local success, err = pcall(function()
+            local func = loadstring(str)
+            if func then
+                task.spawn(func)
+            else
+                error("Compilation failed (Syntax Error).")
+            end
+        end)
+        if success then
+            printMsgCallback("Loadstring statement executed successfully.", true)
+        else
+            printMsgCallback("Execution Error: " .. tostring(err), false, true)
+        end
+        return true
+    end
+    
+    -- Check if it is a raw web link (starts with http://, https://, or www.)
+    if str:match("^https?://") or str:match("^www%.") then
+        if str:match("^www%.") then
+            str = "https://" .. str
+        end
+        printMsgCallback("Web link detected. Compiling into loadstring...", true)
+        local success, err = pcall(function()
+            local code = game:HttpGet(str)
+            local func = loadstring(code)
+            if func then
+                task.spawn(func)
+            else
+                error("Failed to compile code fetched from URL.")
+            end
+        end)
+        if success then
+            printMsgCallback("Fetched code executed successfully.", true)
+        else
+            printMsgCallback("Execution Error: " .. tostring(err), false, true)
+        end
+        return true
+    end
+    
+    return false -- Not a link or loadstring statement
+end
+
+return LoadstringConverter
