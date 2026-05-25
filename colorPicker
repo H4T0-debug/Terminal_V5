@@ -1,3 +1,5 @@
+local HttpService = game:GetService("HttpService")
+
 local ColorPalette = {
     -- Reds & Pinks
     Red = Color3.fromRGB(255, 0, 0),
@@ -117,4 +119,61 @@ local ColorPalette = {
     Charcoal = Color3.fromRGB(54, 69, 79)
 }
 
-return ColorPalette
+local ColorPicker = {}
+
+-- [[ DECODES JSON STRING AND SENDS RGB DATA BACK ]]
+function ColorPicker.ResolveColorsFromJSON(jsonString)
+    local success, packet = pcall(function()
+        return HttpService:JSONDecode(jsonString)
+    end)
+    
+    if not success or not packet then
+        return nil, "Invalid JSON data packet received."
+    end
+    
+    local resolvedColors = {}
+    
+    -- Cycle through requested colors and map them to our internal palette
+    for i, colorName in ipairs(packet) do
+        -- Normalize key casing (Capitalize the first letter for lookup)
+        local formattedName = colorName:gsub("^%s+", ""):gsub("%s+$", "")
+        formattedName = formattedName:sub(1,1):upper() .. formattedName:sub(2):lower()
+        
+        -- Handle special keys like "Neonpink" to "NeonPink"
+        if formattedName:sub(1,4) == "Neon" then
+            formattedName = "Neon" .. formattedName:sub(5,5):upper() .. formattedName:sub(6):lower()
+        elseif formattedName == "Darkgoldenrod" then
+            formattedName = "DarkGoldenrod"
+        elseif formattedName == "Darkgray" then
+            formattedName = "DarkGray"
+        elseif formattedName == "Darkgreen" then
+            formattedName = "DarkGreen"
+        elseif formattedName == "Darkmagenta" then
+            formattedName = "DarkMagenta"
+        elseif formattedName == "Darkorange" then
+            formattedName = "DarkOrange"
+        elseif formattedName == "Darkred" then
+            formattedName = "DarkRed"
+        elseif formattedName == "Darkviolet" then
+            formattedName = "DarkViolet"
+        elseif formattedName == "Hotpink" then
+            formattedName = "HotPink"
+        elseif formattedName == "Deeppink" then
+            formattedName = "DeepPink"
+        elseif formattedName == "Darkslatebue" or formattedName == "Darkslateglass" or formattedName == "Darkslatebgray" then
+            formattedName = "DarkSlateBlue"
+        end
+        
+        local match = ColorPalette[formattedName]
+        if match then
+            table.insert(resolvedColors, match)
+        else
+            -- Fallback defaults to keep the UI visible
+            table.insert(resolvedColors, Color3.fromRGB(255, 255, 255))
+        end
+    end
+    
+    return resolvedColors
+end
+
+return ColorPicker
