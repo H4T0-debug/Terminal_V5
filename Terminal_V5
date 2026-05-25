@@ -24,6 +24,7 @@ end
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
@@ -239,7 +240,7 @@ bloxInput.TextSize = 16
 bloxInput.BackgroundTransparency = 1
 bloxInput.FontFace = Font.fromId(12187374765)
 
--- --- LOAD STATED-LOGIC SYSTEM FROM GITHUB (UPDATED LINK) ---
+-- --- LOAD STATED-LOGIC SYSTEM FROM GITHUB ---
 local CoreSystem = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/CmdProcessor"))()
 
 -- Bind client-side elements directly to core engine
@@ -252,28 +253,40 @@ local systemAPI = CoreSystem.Init({
     BloxScroll = bloxScroll
 })
 
--- --- INTERACTION PASS-THROUGHS ---
+-- --- INTERACTION PASS-THROUGHS (SERIALIZED AS JSON DATA) ---
 input.FocusLost:Connect(function(enter) 
     if enter and input.Text ~= "" then 
-        systemAPI.ExecuteCommand(input.Text)
+        local dataPacket = HttpService:JSONEncode({
+            type = "command",
+            data = input.Text
+        })
+        systemAPI.ReceiveJSON(dataPacket)
         input.Text = "" 
     end 
 end)
 
 aiInput.FocusLost:Connect(function(enter)
     if enter and aiInput.Text ~= "" then
-        systemAPI.AskAI(aiInput.Text)
+        local dataPacket = HttpService:JSONEncode({
+            type = "ai",
+            data = aiInput.Text
+        })
+        systemAPI.ReceiveJSON(dataPacket)
         aiInput.Text = ""
     end
 end)
 
 bloxInput.FocusLost:Connect(function(enter)
     if enter and bloxInput.Text ~= "" then
-        systemAPI.SearchScriptBlox(bloxInput.Text)
+        local dataPacket = HttpService:JSONEncode({
+            type = "search",
+            data = bloxInput.Text
+        })
+        systemAPI.ReceiveJSON(dataPacket)
     end
 end)
 
--- --- UI VISUAL CONTROLLERS ---
+-- --- UI VISUAL CONTROLLERS (FIXED :CONNECT SYNTAX) ---
 local activePanel = "CMD"
 local function setPanel(name)
     activePanel = name
@@ -282,12 +295,12 @@ local function setPanel(name)
     bloxPanel.Visible = (name == "ScriptBlox")
 end
 
-cmdPanelBtn.MouseButton1Click.Connect(function() setPanel("CMD") end)
-terminPanelBtn.MouseButton1Click.Connect(function() setPanel("Termin") end)
-bloxPanelBtn.MouseButton1Click.Connect(function() setPanel("ScriptBlox") end)
+cmdPanelBtn.MouseButton1Click:Connect(function() setPanel("CMD") end)
+terminPanelBtn.MouseButton1Click:Connect(function() setPanel("Termin") end)
+bloxPanelBtn.MouseButton1Click:Connect(function() setPanel("ScriptBlox") end)
 
-closeBtn.MouseButton1Click.Connect(function() mainGui:Destroy() end)
-minBtn.MouseButton1Click.Connect(function()
+closeBtn.MouseButton1Click:Connect(function() mainGui:Destroy() end)
+minBtn.MouseButton1Click:Connect(function()
     local isMin = main.Size.Y.Offset == 30
     main:TweenSize(isMin and UDim2.new(0, 450, 0, 300) or UDim2.new(0, 450, 0, 30), "Out", "Quad", 0.3, true)
     sidebar.Visible = isMin
