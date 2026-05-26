@@ -1,0 +1,739 @@
+local CommandProcessor = {}
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local LogService = game:GetService("LogService")
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+local mouse = player:GetMouse()
+
+-- System Configurations
+local SHIELD_ID = "rbxassetid://87297258848883"
+local CENTER_POS = Vector3.new(152.37291, 429.542969 + 1000, 26.2187309)
+local SHIELD_CENTER_CF = CFrame.new(152.37291, 429.542969, 26.2187309)
+local MN_CF = CFrame.new(-14.8651276, 647.484375 + 5, -388.22995, -0.309060812, 0, 0.951042235, 0, 1, 0, -0.951042235, 0, -0.309060812)
+local TRASH_NAME = "trashcan"
+local DOMAIN_CR = "Death Cutscene"
+local DOMAIN_AS = "Atoms"
+local AURA_POWER = 50000
+
+local uiRef = {}
+local states = {
+    antifling = false,
+    esp = false,
+    flinging = false,
+    flingAura = false,
+    trashLooping = false,
+    trashTarget = nil,
+    trashCooldown = false,
+    isAttached = false,
+    loopFlinging = false,
+    protocol1 = false,
+    waitingForMn = false,
+    waitingForPas = false,
+    chatMode = false,
+    aimbot = false, 
+    lastSafePos = SHIELD_CENTER_CF,
+    lastAiCode = "",
+    lastScrapedData = "No game data captured yet."
+}
+
+local loadedLibrary = nil -- Stores the library data once downloaded
+local connections = {}
+local shieldInstance = nil
+
+-- --- UTILITY METHODS ---
+local function printMsg(msg, isSystem, isError)
+    if not uiRef.OutputLabel then return end
+    local color = isError and "rgb(255, 100, 100)" or (isSystem and "rgb(0, 255, 255)" or "rgb(0, 255, 0)")
+    uiRef.OutputLabel.Text = uiRef.OutputLabel.Text .. string.format("\n<font color='%s'>%s%s</font>", color, isSystem and "[SYSTEM] " or "", msg)
+    task.wait(0.05)
+    uiRef.CmdScroll.CanvasPosition = Vector2.new(0, 99999)
+end
+
+local function getPlayer(name)
+    name = name:lower():gsub("%s+", "")
+    for _, p in pairs(Players:GetPlayers()) do
+        if p.Name:lower():sub(1, #name) == name or p.DisplayName:lower():sub(1, #name) == name then
+            return p
+        end
+    end
+    return nil
+end
+
+local function findObjectDeep(name)
+    for _, obj in pairs(game:GetDescendants()) do
+        if obj.Name == name and (obj:IsA("BasePart") or obj:IsA("Model")) then
+            return obj
+        end
+    end
+    return nil
+end
+
+local function getNearestTrashcan()
+    local nearest = nil
+    local shortestDist = 1000
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Name:lower() == TRASH_NAME then
+            if obj.Transparency < 1 and obj.CanCollide == true then
+                local isHeld = false
+                for _, p in pairs(Players:GetPlayers()) do
+                    if p.Character and obj:IsDescendantOf(p.Character) then isHeld = true break end
+                end
+                if not isHeld then
+                    local dist = (hrp.Position - obj.Position).Magnitude
+                    if dist < shortestDist then shortestDist = dist nearest = obj end
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+local function extractCode(text)
+    local pattern = "```lua\n(.-)\n```"
+    local code = text:match(pattern)
+    if not code then
+        pattern = "```\n(.-)\n```"
+        code = text:match(pattern)
+    end
+    return code
+end
+
+-- --- SHIELD SYSTEM ---
+local function createShield()
+    if shieldInstance then shieldInstance:Destroy() end
+    local success, result = pcall(function() return game:GetObjects(SHIELD_ID) end)
+    if success and result[1] then
+        shieldInstance = result[1]; shieldInstance.Name = "EnergyShield"; shieldInstance.Parent = workspace
+        local function setup(obj) if obj:IsA("BasePart") then obj.CanCollide = false; obj.CanQuery = false; obj.Anchored = true end end
+        if shieldInstance:IsA("BasePart") then shieldInstance.CFrame = CFrame.new(CENTER_POS); setup(shieldInstance)
+        elseif shieldInstance:IsA("Model") then shieldInstance:PivotTo(CFrame.new(CENTER_POS)); for _, p in pairs(shieldInstance:GetDescendants()) do setup(p) end end
+        printMsg("Control Area shield deployed.", true)
+    else printMsg("Error: Shield load failed.", false, true) end
+end
+
+-- --- AIMBOT TARGET ACQUISITION ---
+local function getClosestVisibleTarget()
+    local localCharacter = player.Character
+    if not localCharacter then return nil end
+    
+    local localHrp = localCharacter:FindFirstChild("HumanoidRootPart")
+    if not localHrp then return nil end
+    
+    local shortestDistance = 200
+    local nearestTarget = nil
+    
+    for _, targetPlayer in pairs(Players:GetPlayers()) do
+        if targetPlayer ~= player then
+            if targetPlayer.Team ~= player.Team or player.Team == nil then
+                local targetCharacter = targetPlayer.Character
+                if targetCharacter then
+                    local targetHrp = targetCharacter:FindFirstChild("HumanoidRootPart")
+                    local targetHumanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+                    
+                    if targetHrp and targetHumanoid and targetHumanoid.Health > 0 then
+                        local distance = (localHrp.Position - targetHrp.Position).Magnitude
+                        if distance < shortestDistance then
+                            shortestDistance = distance
+                            nearestTarget = targetCharacter
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return nearestTarget
+end
+
+-- --- SILENT TARGET PREDICTION UTILITIES ---
+local function getPredictedPosition(targetChar)
+    if not targetChar then return nil end
+    local targetHrp = targetChar:FindFirstChild("HumanoidRootPart")
+    local localHrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not targetHrp or not localHrp then return nil end
+    
+    local targetVelocity = targetHrp.AssemblyLinearVelocity
+    local distance = (localHrp.Position - targetHrp.Position).Magnitude
+    
+    local projectileSpeed = 300
+    local travelTime = distance / projectileSpeed
+    
+    local predictedPosition = targetHrp.Position + (targetVelocity * travelTime)
+    return predictedPosition
+end
+
+-- --- EXTERNAL LOADERS ---
+local LoadstringConverter = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/loadstringV5"))()
+local DataScraper = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/DataIndex_V5"))()
+local ColorPicker = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/colorPicker"))()
+
+-- --- CORE EXECUTION API ---
+local API = {}
+
+function API.AskAI(message)
+    if message:lower():find("run this code") then
+        uiRef.AiOutputLabel.Text = uiRef.AiOutputLabel.Text .. "\n\n<b>" .. player.Name .. ":</b> " .. message
+        if states.lastAiCode ~= "" then
+            uiRef.AiOutputLabel.Text = uiRef.AiOutputLabel.Text .. "\n<b>Termin:</b> Executing cached script..."
+            uiRef.AiScroll.CanvasPosition = Vector2.new(0, 99999)
+            local success, err = pcall(function()
+                local func = loadstring(states.lastAiCode)
+                if func then task.spawn(func) else error("Failed to load script (Syntax Error)") end
+            end)
+            if success then
+                uiRef.AiOutputLabel.Text = uiRef.AiOutputLabel.Text .. "\n<b>Termin:</b> Script executed successfully."
+            else
+                uiRef.AiOutputLabel.Text = uiRef.AiOutputLabel.Text .. "\n<b>Termin:</b> Execution Error: " .. tostring(err)
+            end
+        else
+            uiRef.AiOutputLabel.Text = uiRef.AiOutputLabel.Text .. "\n<b>Termin:</b> Error: No script found in previous message to execute."
+        end
+        uiRef.AiScroll.CanvasPosition = Vector2.new(0, 99999)
+        return
+    end
+
+	uiRef.AiOutputLabel.Text = uiRef.AiOutputLabel.Text .. "\n\n<b>" .. player.Name .. ":</b> " .. message
+	uiRef.AiOutputLabel.Text = uiRef.AiOutputLabel.Text .. "\n<b>Termin:</b> <i>Thinking...</i>"
+	uiRef.AiScroll.CanvasPosition = Vector2.new(0, 99999)
+
+	task.spawn(function()
+		local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
+		if not requestFunc then 
+			uiRef.AiOutputLabel.Text = uiRef.AiOutputLabel.Text:gsub("\n<b>Termin:</b> <i>Thinking.*</i>", "\n<b>Termin:</b> Error: Executor does not support requests.")
+			return 
+		end
+
+		local response = requestFunc({
+			Url = "https://openrouter.ai/api/v1/chat/completions",
+			Method = "POST",
+			Headers = {
+				["Content-Type"] = "application/json",
+				["Authorization"] = "Bearer " .. uiRef.APIKey,
+                ["HTTP-Referer"] = "https://roblox.com",
+                ["X-Title"] = "Roblox Terminal"
+			},
+			Body = HttpService:JSONEncode({
+				model = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", 
+				messages = {
+                    {
+                        role = "system", 
+                        content = "You are Termin AI. You are integrated into Terminal V5.0. You receive live game hierarchy data. ALWAYS reference the data provided in the user's message as it is current. Identify vulnerabilities or scripts. IMPORTANT: Only provide scripts in ```lua ... ``` blocks."
+                    },
+					{role = "user", content = "CURRENT_GAME_DATA: " .. states.lastScrapedData .. "\n\nUSER_MESSAGE: " .. message}
+				},
+				max_tokens = 1000
+			}),
+            Timeout = 60
+		})
+
+		if response.Success then
+			local success, data = pcall(function() return HttpService:JSONDecode(response.Body) end)
+            if success and data and data.choices and data.choices[1] and data.choices[1].message then
+                local msgData = data.choices[1].message
+			    local reply = msgData.content or ""
+                
+                if reply == "" then
+                    uiRef.AiOutputLabel.Text = uiRef.AiOutputLabel.Text:gsub("\n<b>Termin:</b> <i>Thinking.*</i>", "\n<b>Termin:</b> Empty response received.")
+                else
+                    local foundCode = extractCode(reply)
+                    if foundCode then states.lastAiCode = foundCode end
+			        uiRef.AiOutputLabel.Text = uiRef.AiOutputLabel.Text:gsub("\n<b>Termin:</b> <i>Thinking.*</i>", "\n<b>Termin:</b> " .. reply)
+                end
+            end
+		end
+		uiRef.AiScroll.CanvasPosition = Vector2.new(0, 99999)
+	end)
+end
+
+function API.SearchScriptBlox(query)
+    for _, child in pairs(uiRef.BloxScroll:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
+    if not requestFunc then return end
+    
+    task.spawn(function()
+        local url = "https://scriptblox.com/api/script/search?q=" .. HttpService:UrlEncode(query) .. "&mode=free"
+        local response = requestFunc({Url = url, Method = "GET"})
+        if response.Success then
+            local data = HttpService:JSONDecode(response.Body)
+            if data and data.result and data.result.scripts then
+                for _, s in pairs(data.result.scripts) do
+                    local btn = Instance.new("TextButton", uiRef.BloxScroll)
+                    btn.Size = UDim2.new(1, -10, 0, 50)
+                    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+                    btn.Text = "<b>" .. s.title .. "</b>\nClick to execute loadstring"
+                    btn.TextColor3 = Color3.new(1, 1, 1)
+                    btn.TextSize = 14
+                    btn.RichText = true
+                    btn.FontFace = Font.fromId(12187374765)
+                    Instance.new("UICorner", btn)
+                    btn.MouseButton1Click:Connect(function()
+                        local success, err = pcall(function() loadstring(s.script)() end)
+                        if not success then warn("ScriptBlox Error: " .. tostring(err)) end
+                    end)
+                end
+            end
+        end
+    end)
+end
+
+function API.ExecuteCommand(rawInput)
+    local originalRaw = rawInput:gsub("^%s+", ""):gsub("%s+$", "")
+    if originalRaw == "" then return end
+
+    if LoadstringConverter then
+        local wasHandled, errorResult = pcall(function()
+            return LoadstringConverter.CleanAndExecute(originalRaw, printMsg)
+        end)
+        if wasHandled and errorResult then return end
+    end
+
+    local raw = originalRaw:lower()
+    printMsg("$ " .. raw, false)
+    local found = false
+    
+    if raw == "control area" then found = true; createShield()
+    
+    -- --- DYNAMIC PACKAGE LIBRARY LOADING ---
+    elseif raw:match('^get package%("([%w_]+)"%)') then
+        found = true
+        local pkgName = originalRaw:match('get package%("([%w_]+)"%)')
+        
+        if pkgName == "scriptLibrary" then
+            printMsg("Fetching package 'scriptLibrary' from database...", true)
+            task.spawn(function()
+                local success, lib = pcall(function()
+                    return loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/scriptLibrary"))()
+                end)
+                
+                if success and lib and lib.Catalog then
+                    loadedLibrary = lib
+                    printMsg("Package loaded! Database catalogs decoded successfully.", true)
+                    printMsg("====== AVAILABLE SCRIPTS ======", true)
+                    for i, item in ipairs(lib.Catalog) do
+                        printMsg(string.format("[%d] %s [%s]", i, item.Name, item.Game:upper()), false)
+                    end
+                    printMsg("Type 'run package [Number]' to execute.", true)
+                else
+                    printMsg("Failed to mount scriptLibrary package.", false, true)
+                end
+            end)
+        else
+            printMsg("Package '" .. pkgName .. "' not found in global registers.", false, true)
+        end
+        
+    -- Run specific script index from package database
+    elseif raw:match("^run package (%d+)$") then
+        found = true
+        local idx = tonumber(raw:match("^run package (%d+)$"))
+        if loadedLibrary and loadedLibrary.Catalog and loadedLibrary.Catalog[idx] then
+            local scriptItem = loadedLibrary.Catalog[idx]
+            printMsg("Compiling & mounting: " .. scriptItem.Name, true)
+            task.spawn(function()
+                local success, err = pcall(scriptItem.Execute)
+                if success then
+                    printMsg("Successfully loaded execution routine.", true)
+                else
+                    printMsg("Execution Error: " .. tostring(err), false, true)
+                end
+            end)
+        else
+            printMsg("Error: Invalid index or scriptLibrary package is not loaded yet.", false, true)
+        end
+        
+    -- --- NEW AIMBOT COMMANDS ---
+    elseif raw == "enable aimbot" then
+        found = true; states.aimbot = true; printMsg("Silent humanized aimbot initialized.", true)
+    elseif raw == "disable aimbot" then
+        found = true; states.aimbot = false; printMsg("Aimbot deactivated.", true)
+    
+    elseif raw:sub(1,11) == "change rgb " then
+        found = true
+        local colorArgs = originalRaw:sub(12):gsub("%s+", "")
+        local split = colorArgs:split(",")
+        local color1Name, color2Name = split[1], split[2]
+        
+        if color1Name and color2Name and ColorPicker and uiRef.LedGradient then
+            local jsonPayload = HttpService:JSONEncode({
+                color1 = color1Name,
+                color2 = color2Name
+            })
+            
+            local jsonResponse = ColorPicker.ProcessRequest(jsonPayload)
+            local success, response = pcall(function()
+                return HttpService:JSONDecode(jsonResponse)
+            end)
+            
+            if success and response and response.success then
+                local c1 = Color3.fromRGB(response.color1.r, response.color1.g, response.color1.b)
+                local c2 = Color3.fromRGB(response.color2.r, response.color2.g, response.color2.b)
+                
+                uiRef.LedGradient.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0.00, c1),
+                    ColorSequenceKeypoint.new(0.25, c2),
+                    ColorSequenceKeypoint.new(0.50, c1),
+                    ColorSequenceKeypoint.new(0.75, c2),
+                    ColorSequenceKeypoint.new(1.00, c1)
+                })
+                printMsg("RGB LED configuration updated to: " .. color1Name .. " and " .. color2Name, true)
+            else
+                local errMsg = response and response.error or "Unknown resolution error"
+                printMsg("Error: " .. errMsg, false, true)
+            end
+        else
+            printMsg("Syntax Error: Use 'change rgb color1,color2'", false, true)
+        end
+        
+    elseif raw == "start data index" then
+        found = true; print(player.DisplayName .. ":UTF-70:freemium")
+        printMsg("Data Indexing: ACTIVATED (Signal Sent)", true)
+    elseif raw == "stop data index" then
+        found = true; print(player.DisplayName .. ":UTF-71:free")
+        printMsg("Data Indexing: DEACTIVATED (Signal Sent)", true)
+    elseif raw == "protocol 2" then
+        found = true; printMsg("Protocol 2: EVASION SEQUENCE START.", true)
+        task.spawn(function()
+            task.wait(0.5); workspace.FallenPartsDestroyHeight = -100000
+            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local oldCF = player.Character.HumanoidRootPart.CFrame
+                player.Character.HumanoidRootPart.CFrame = CFrame.new(oldCF.X, -10000, oldCF.Z)
+                task.wait(10); player.Character.HumanoidRootPart.CFrame = SHIELD_CENTER_CF
+                printMsg("Protocol 2: Returned to HQ.", true)
+            end
+        end)
+    elseif raw == "enable chat mode" then
+        found = true; states.chatMode = true
+        if connections.chatListener then connections.chatListener:Disconnect() end
+        connections.chatListener = player.Chated or player.Chatted:Connect(function(msg)
+            if states.chatMode and msg:sub(1,1) == "$" then API.ExecuteCommand(msg:sub(2)) end
+        end)
+        printMsg("Chat Mode: ENABLED. Use '$' in game chat.", true)
+    elseif raw == "disable chat mode" then
+        found = true; states.chatMode = false; if connections.chatListener then connections.chatListener:Disconnect() end; printMsg("Chat Mode: DISABLED.", true)
+    elseif raw == "tp mn" then
+        found = true; states.waitingForMn = true; printMsg("Waiting for Flowing Water (Console Move)...", true)
+    elseif raw == "tp pas" then
+        found = true; states.waitingForPas = true; printMsg("Waiting for Flowing Water (Console Move) for PAS...", true)
+    elseif raw == "protocol 1" then
+        found = true; states.protocol1 = not states.protocol1; printMsg("Protocol 1: " .. (states.protocol1 and "AGGRESSIVE" or "DISABLED"), true)
+    elseif raw == "loop fling all" then
+        found = true; states.loopFlinging = true; printMsg("Loop Fling All: ACTIVATED", true)
+        task.spawn(function()
+            while states.loopFlinging do
+                for _, target in pairs(Players:GetPlayers()) do
+                    if not states.loopFlinging then break end
+                    if target ~= player and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                        local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                        local tHrp = target.Character:FindFirstChild("HumanoidRootPart")
+                        if hum and hrp and tHrp then
+                            hum:ChangeState(Enum.HumanoidStateType.Physics)
+                            for i = 1, 50 do
+                                if not target.Character or not states.loopFlinging then break end
+                                hrp.Velocity = tHrp.Velocity * 1.5 + Vector3.new(0, 5000, 0)
+                                hrp.RotVelocity = Vector3.new(0, 50000, 0)
+                                hrp.CFrame = (i % 2 == 0) and tHrp.CFrame or tHrp.CFrame * CFrame.new(0, 0, 0.1)
+                                RunService.Heartbeat:Wait()
+                            end
+                            hrp.RotVelocity = Vector3.zero; hrp.Velocity = Vector3.zero; hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                        end
+                    end
+                end
+                task.wait(0.5)
+            end
+        end)
+    elseif raw == "stop" then
+        found = true; states.loopFlinging = false; states.protocol1 = false; states.waitingForMn = false; states.waitingForPas = false; states.aimbot = false; printMsg("All processes terminated.", true)
+    elseif raw == "tp as" then
+        found = true; printMsg("Searching for Atoms Domain...", true)
+        local target = findObjectDeep(DOMAIN_AS)
+        if target then
+            player.Character:SetPrimaryPartCFrame(target:GetPivot() * CFrame.new(0, 5, 0))
+            printMsg("Domain 'Atoms' reached.", true)
+        else printMsg("Error: Atoms not found.", false, true) end
+    elseif raw == "tp cr" then
+        found = true; printMsg("Searching for Cutscene Domain...", true)
+        local target = findObjectDeep(DOMAIN_CR)
+        if target then
+            player.Character:SetPrimaryPartCFrame(target:GetPivot() * CFrame.new(0, 5, 0))
+            printMsg("Domain 'Death Cutscene' reached.", true)
+        else printMsg("Error: Cutscene not found.", false, true) end
+    elseif raw == "enable fling aura" then
+        found = true; states.flingAura = true
+        if connections.aura then connections.aura:Disconnect() end
+        connections.aura = RunService.Heartbeat:Connect(function()
+            local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp and states.flingAura then
+                local oldV, oldRV = hrp.Velocity, hrp.RotVelocity
+                for _, p in pairs(Players:GetPlayers()) do
+                    if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                        if (hrp.Position - p.Character.HumanoidRootPart.Position).Magnitude < 4 then
+                            hrp.Velocity = Vector3.new(AURA_POWER, AURA_POWER, AURA_POWER)
+                            hrp.RotVelocity = Vector3.new(AURA_POWER, AURA_POWER, AURA_POWER)
+                            RunService.RenderStepped:Wait()
+                            hrp.Velocity = oldV; hrp.RotVelocity = oldRV
+                        end
+                    end
+                end
+            end
+        end)
+        printMsg("Fling Aura Active (50k Power)", true)
+    elseif raw == "disable fling aura" then
+        found = true; states.flingAura = false; if connections.aura then connections.aura:Disconnect() end; printMsg("Fling Aura Disabled.", true)
+    elseif raw:sub(1,6) == "fling " then
+        found = true; local cmdStr = raw:sub(7); local tName, hits
+        if cmdStr:find(":") then local split = cmdStr:split(":") tName = split[1] hits = tonumber(split[2]) or 10 else tName = cmdStr hits = 10 end
+        local target = getPlayer(tName)
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+            printMsg("Flinging " .. target.DisplayName, true)
+            task.spawn(function()
+                states.flinging = true
+                local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                local tHrp = target.Character.HumanoidRootPart
+                if hum and hrp then
+                    hum:ChangeState(Enum.HumanoidStateType.Physics)
+                    for i = 1, hits * 10 do 
+                        if not target.Character then break end
+                        hrp.Velocity = tHrp.Velocity * 2 + Vector3.new(0, 8000, 0)
+                        hrp.RotVelocity = Vector3.new(0, 80000, 0)
+                        hrp.CFrame = (i % 2 == 0) and tHrp.CFrame or tHrp.CFrame * CFrame.new(0, 0.05, 0)
+                        RunService.Heartbeat:Wait()
+                    end
+                    hrp.RotVelocity = Vector3.zero; hrp.Velocity = Vector3.zero; hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                end
+                states.flinging = false
+            end)
+        end
+    elseif raw:sub(1,9) == "trashcan " then
+        found = true; local target = getPlayer(raw:sub(10))
+        if target then states.trashTarget = target; states.trashLooping = true; printMsg("Trash Target: " .. target.DisplayName, true); local t = getNearestTrashcan(); if t then player.Character.HumanoidRootPart.CFrame = t.CFrame * CFrame.new(3,0,0) end end
+    elseif raw == "stop trashcan" then
+        found = true; states.trashLooping = false; states.isAttached = false; printMsg("Trash Loop Halted.", true)
+    elseif raw == "enable antifling" then
+        found = true; states.antifling = true
+        if connections.safePosTracker then connections.safePosTracker:Disconnect() end
+        connections.safePosTracker = RunService.Heartbeat:Connect(function()
+            local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp and not states.flinging then
+                if hrp.Position.Y < 800 and hrp.Position.Y > -500 then states.lastSafePos = hrp.CFrame end
+            end
+        end)
+        if connections.antifling then connections.antifling:Disconnect() end
+        connections.antifling = RunService.Heartbeat:Connect(function()
+            local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp and states.antifling then
+                if hrp.Position.Y >= 1000 then
+                    local returnTarget = states.lastSafePos 
+                    printMsg("Fling Detected! Quarantining at MN for 10s.", true)
+                    hrp.CFrame = MN_CF; hrp.Anchored = true
+                    task.delay(10, function() 
+                        hrp.Anchored = false; hrp.CFrame = returnTarget
+                        printMsg("Sequence Complete: Returned to safety.", true)
+                    end)
+                end
+            end
+        end)
+        printMsg("Smart Anti-Fling Enabled.", true)
+    elseif raw == "disable antifling" then
+        found = true; states.antifling = false; 
+        if connections.antifling then connections.antifling:Disconnect() end
+        if connections.safePosTracker then connections.safePosTracker:Disconnect() end
+        printMsg("Anti-Fling Disabled.", true)
+    elseif raw == "enable esp" then
+        found = true; states.esp = true
+        task.spawn(function() while states.esp do for _, p in pairs(Players:GetPlayers()) do if p ~= player and p.Character and not p.Character:FindFirstChild("TerminalESP") then local h = Instance.new("Highlight", p.Character) h.Name = "TerminalESP" h.FillColor = Color3.new(0, 1, 1) end end task.wait(1) end end)
+        printMsg("ESP Enabled.", true)
+    elseif raw == "clear" then
+        found = true; uiRef.OutputLabel.Text = "[SYSTEM] Console Cleared."
+    end
+    if not found then printMsg("Error: command doesn't exist.", false, true) end
+end
+
+-- --- UNIFIED JSON COMMAND DECODER & RECEIVER ---
+function API.ReceiveJSON(jsonString)
+    local success, packet = pcall(function()
+        return HttpService:JSONDecode(jsonString)
+    end)
+    
+    if success and packet and packet.type and packet.data then
+        if packet.type == "command" then
+            API.ExecuteCommand(packet.data)
+        elseif packet.type == "ai" then
+            API.AskAI(packet.data)
+        elseif packet.type == "search" then
+            API.SearchScriptBlox(packet.data)
+        end
+    else
+        warn("[CMD PROCESSOR]: Invalid or corrupted JSON packet received.")
+    end
+end
+
+-- --- INITIALIZATION PIPELINE ---
+function CommandProcessor.Init(uidefs)
+    uiRef = uidefs
+    
+    -- Setup Core Hooks
+    task.spawn(function()
+        local function setupHook()
+            local char = player.Character or player.CharacterAdded:Wait()
+            local comms = char:WaitForChild("Communicate", 10)
+            if comms and comms:IsA("RemoteEvent") then
+                local old; old = hookmetamethod(game, "__namecall", function(self, ...)
+                    local args = {...}
+                    if self == comms and getnamecallmethod() == "FireServer" then
+                        if states.trashLooping then
+                            local g = args[1].Goal
+                            if g == "LeftClick" and not states.trashCooldown then 
+                                task.spawn(function() task.wait(0.1); if states.trashTarget then states.isAttached = true end end)
+                            elseif g == "LeftClickRelease" then 
+                                states.isAttached = false; states.trashCooldown = true; 
+                                task.spawn(function() task.wait(2.2); local t = getNearestTrashcan(); if t and player.Character then player.Character.HumanoidRootPart.CFrame = t.CFrame * CFrame.new(3, 0, 0) end; states.trashCooldown = false end) 
+                            end
+                        end
+                        if args[1] and args[1].Goal == "Console Move" then
+                            if states.waitingForMn then
+                                states.waitingForMn = false
+                                printMsg("Signal detected. Teleporting (MN) in 0.7s...", true)
+                                task.delay(0.7, function()
+                                    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then player.Character.HumanoidRootPart.CFrame = MN_CF end
+                                end)
+                            elseif states.waitingForPas then
+                                states.waitingForPas = false
+                                printMsg("Signal detected. Teleporting (PAS) in 0.7s...", true)
+                                task.delay(0.7, function()
+                                    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then player.Character.HumanoidRootPart.CFrame = CFrame.new(1073.91443, 16.4270039 + 5, 22984.873, 1, 0, 0, 0, 1, 0, 0, 0, 1) end
+                                end)
+                            end
+                        end
+                    end
+                    return old(self, ...)
+                end)
+            end
+        end
+        setupHook(); player.CharacterAdded:Connect(setupHook)
+    end)
+
+    -- --- SILENT AIM METAMETHOD HOOK ---
+    task.spawn(function()
+        local oldIndex
+        pcall(function()
+            oldIndex = hookmetamethod(game, "__index", function(self, key)
+                if states.aimbot and self == mouse then
+                    local targetChar = getClosestVisibleTarget()
+                    if targetChar then
+                        local predictedPos = getPredictedPosition(targetChar)
+                        if predictedPos then
+                            if key == "Hit" then
+                                return CFrame.new(predictedPos)
+                            elseif key == "Target" then
+                                return targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChildOfClass("BasePart")
+                            end
+                        end
+                    end
+                end
+                return oldIndex(self, key)
+            end)
+        end)
+    end)
+
+    -- Running render loops
+    RunService.RenderStepped:Connect(function()
+        if states.protocol1 and player.Character then
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed, hum.JumpPower, hum.PlatformStand = 16, 50, false end
+        end
+        local hum = player.Character and player.Character:FindFirstChild("Humanoid")
+        if hum and shieldInstance and shieldInstance.Parent then
+            local hpPercent = hum.Health / hum.MaxHealth
+            hum.WalkSpeed = (hpPercent <= 0.2) and 616 or 116
+        end
+    end)
+
+    RunService.Heartbeat:Connect(function()
+        if shieldInstance and shieldInstance.Parent and player.Character then
+            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp and (hrp.Position - SHIELD_CENTER_CF.Position).Magnitude > 1000 then
+                hrp.CFrame = SHIELD_CENTER_CF; hrp.Velocity = Vector3.zero
+            end
+        end
+        if states.isAttached and states.trashTarget and states.trashTarget.Character then 
+            local hrp, tHrp = player.Character:FindFirstChild("HumanoidRootPart"), states.trashTarget.Character:FindFirstChild("HumanoidRootPart")
+            if hrp and tHrp then hrp.CFrame = tHrp.CFrame * CFrame.new(0, 0, 1.8); hrp.Velocity = Vector3.zero end 
+        end 
+    end)
+
+    -- --- SMOOTH AIMBOT LOOP WITH TARGET PREDICTION ---
+    task.spawn(function()
+        local lerpFactor = 0.15
+        local clickCooldown = 0.1
+        local lastClickTime = 0
+        
+        while true do
+            local dt = RunService.RenderStepped:Wait()
+            
+            if states.aimbot and player.Character then
+                local tool = player.Character:FindFirstChildOfClass("Tool")
+                
+                if tool then
+                    local targetChar = getClosestVisibleTarget()
+                    
+                    if targetChar then
+                        local targetHrp = targetChar:FindFirstChild("HumanoidRootPart")
+                        local localHrp = player.Character:FindFirstChild("HumanoidRootPart")
+                        
+                        if targetHrp and localHrp then
+                            local predictedPos = getPredictedPosition(targetChar)
+                            
+                            if predictedPos then
+                                local cameraPos = camera.CFrame.Position
+                                
+                                local targetCameraCF = CFrame.lookAt(cameraPos, predictedPos)
+                                camera.CFrame = camera.CFrame:Lerp(targetCameraCF, lerpFactor)
+                                
+                                local flatTargetPos = Vector3.new(predictedPos.X, localHrp.Position.Y, predictedPos.Z)
+                                local targetCharacterCF = CFrame.lookAt(localHrp.Position, flatTargetPos)
+                                localHrp.CFrame = localHrp.CFrame:Lerp(targetCharacterCF, lerpFactor)
+                                
+                                if tick() - lastClickTime >= clickCooldown then
+                                    lastClickTime = tick()
+                                    pcall(function()
+                                        tool:Activate()
+                                    end)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    -- Start Scraper loop
+    if DataScraper then
+        local nextObj = DataScraper.GetHierarchyGenerator()
+        DataScraper.ListenForSignals()
+
+        task.spawn(function()
+            while true do
+                if DataScraper.IsIndexingEnabled() then
+                    local payload = nextObj()
+                    if payload then 
+                        states.lastScrapedData = payload 
+                        silentDataFeed(payload) 
+                    end
+                end
+                task.wait(10)
+            end
+        end)
+    end
+
+    return API
+end
+
+return CommandProcessor
