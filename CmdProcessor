@@ -555,10 +555,10 @@ function API.ExecuteCommand(rawInput)
     if not found then printMsg("Error: command doesn't exist.", false, true) end
 end
 
--- --- UNIFIED JSON COMMAND DECODER & RECEIVER ---
+-- --- SMART JSON DECODER WITH PLAIN TEXT FALLBACK ---
 function API.ReceiveJSON(jsonString)
     local success, packet = pcall(function()
-        return HttpService:JSONEncode(jsonString)
+        return HttpService:JSONDecode(jsonString)
     end)
     
     if success and packet and packet.type and packet.data then
@@ -570,7 +570,8 @@ function API.ReceiveJSON(jsonString)
             API.SearchScriptBlox(packet.data)
         end
     else
-        warn("[CMD PROCESSOR]: Invalid or corrupted JSON packet received.")
+        -- FIX: Fallback to direct raw command processing instead of hard throwing corrupt packet warning
+        API.ExecuteCommand(jsonString)
     end
 end
 
@@ -644,7 +645,7 @@ function CommandProcessor.Init(uidefs)
 
     -- Running render loops
     RunService.RenderStepped:Connect(function()
-        -- UPGRADED PROTOCOL 1 (AGGRESSIVE UNANCHOR LOOP)
+        -- RENDERSTEPPED PROTOCOL 1 FRAME FORCES
         if states.protocol1 and player.Character then
             local hum = player.Character:FindFirstChildOfClass("Humanoid")
             if hum then 
@@ -652,21 +653,28 @@ function CommandProcessor.Init(uidefs)
                 hum.JumpPower = 50
                 hum.PlatformStand = false 
             end
-            
-            -- Scan and force-unanchor every BasePart inside your character to prevent freezes/jails
-            for _, part in ipairs(player.Character:GetDescendants()) do
-                if part:IsA("BasePart") and part.Anchored then
-                    pcall(function()
-                        part.Anchored = false
-                    end)
-                end
-            end
         end
         
         local hum = player.Character and player.Character:FindFirstChild("Humanoid")
         if hum and shieldInstance and shieldInstance.Parent then
             local hpPercent = hum.Health / hum.MaxHealth
             hum.WalkSpeed = (hpPercent <= 0.2) and 616 or 116
+        end
+    end)
+
+    -- OPTIMIZED HIGH-SPEED BACKGROUND UNANCHOR EXECUTION FOR PROTOCOL 1
+    task.spawn(function()
+        while true do
+            RunService.Heartbeat:Wait()
+            if states.protocol1 and player.Character then
+                pcall(function()
+                    for _, part in ipairs(player.Character:GetChildren()) do
+                        if part:IsA("BasePart") and part.Anchored then
+                            part.Anchored = false
+                        end
+                    end
+                end)
+            end
         end
     end)
 
