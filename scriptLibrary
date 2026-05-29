@@ -106,6 +106,13 @@ local ScriptLibrary = {
             Execute = function()
                 loadstring(game:HttpGet("https://raw.githubusercontent.com/ringtahub/Ringta-hub/refs/heads/main/Ringta"))()
             end
+        },
+        {
+            Name = "Vape Voidware",
+            Game = "99 Nights in the Forest & 3 More Games",
+            Execute = function()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/VapeVoidware/VW-Add/main/loader.lua", true))()
+            end
         }
     }
 }
