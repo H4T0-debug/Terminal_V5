@@ -26,6 +26,7 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
@@ -57,12 +58,81 @@ ledGradient.Color = ColorSequence.new({
     ColorSequenceKeypoint.new(1.00, Color3.fromRGB(230, 0, 115))   -- Vivid Neon Dark Pink
 })
 
--- Dynamic RGB LED Flow Animation
+-- --- NEW DRAGGABLE CIRCLE TOGGLE BUTTON ---
+local toggleCircle = Instance.new("Frame", mainGui)
+toggleCircle.Name = "ToggleCircle"
+toggleCircle.Size = UDim2.new(0, 45, 0, 45)
+toggleCircle.Position = UDim2.new(0.1, 0, 0.1, 0) -- Default spawn position
+toggleCircle.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+toggleCircle.Active = true
+Instance.new("UICorner", toggleCircle).CornerRadius = UDim.new(1, 0) -- Perfect Circle
+
+local toggleStroke = Instance.new("UIStroke", toggleCircle)
+toggleStroke.Thickness = 2
+toggleStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+toggleStroke.Color = Color3.fromRGB(255, 255, 255)
+
+local toggleGradient = Instance.new("UIGradient", toggleStroke)
+toggleGradient.Color = ledGradient.Color
+
+local toggleLabel = Instance.new("TextLabel", toggleCircle)
+toggleLabel.Size = UDim2.new(1, 0, 1, 0)
+toggleLabel.BackgroundTransparency = 1
+toggleLabel.Text = "T"
+toggleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleLabel.TextSize = 22
+toggleLabel.FontFace = Font.fromId(12187374765)
+
+-- Dynamic RGB LED Flow Animation Loop (Synchronized)
 task.spawn(function()
     local rotSpeed = 110 -- Speed of rotation/flow
     while mainGui and mainGui.Parent do
         local dt = RunService.RenderStepped:Wait()
-        ledGradient.Rotation = (ledGradient.Rotation + (rotSpeed * dt)) % 360
+        local nextRotation = (ledGradient.Rotation + (rotSpeed * dt)) % 360
+        ledGradient.Rotation = nextRotation
+        toggleGradient.Rotation = nextRotation
+    end
+end)
+
+-- Custom Mobile-Optimized Drag & Click Handler for Circle Toggle
+local dragging = false
+local dragInput
+local dragStart
+local startPos
+local moved = false
+
+toggleCircle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        moved = false
+        dragStart = input.Position
+        startPos = toggleCircle.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+                if not moved then
+                    -- Triggered click/tap because no significant motion delta was recorded
+                    main.Visible = not main.Visible
+                end
+            end
+        end)
+    end
+end)
+
+toggleCircle.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        if delta.Magnitude > 5 then
+            moved = true
+        end
+        toggleCircle.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
 end)
 
@@ -72,7 +142,7 @@ header.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 Instance.new("UICorner", header)
 
 local title = Instance.new("TextLabel", header)
-title.Size = UDim2.new(1, -80, 1, 0)
+title.Size = UDim2.new(1, -50, 1, 0)
 title.Position = UDim2.new(0, 10, 0, 0)
 title.Text = "-TERMINAL V5.0-"
 title.TextColor3 = Color3.new(1, 1, 1)
@@ -81,14 +151,7 @@ title.TextXAlignment = "Left"
 title.BackgroundTransparency = 1
 title.FontFace = Font.fromId(12187374765)
 
-local minBtn = Instance.new("TextButton", header)
-minBtn.Size = UDim2.new(0, 30, 1, 0)
-minBtn.Position = UDim2.new(1, -65, 0, 0)
-minBtn.Text = "_"
-minBtn.TextColor3 = Color3.new(1, 1, 1)
-minBtn.BackgroundTransparency = 1
-minBtn.TextSize = 20
-
+-- Minimize Button has been fully deleted. Close button is aligned properly.
 local closeBtn = Instance.new("TextButton", header)
 closeBtn.Size = UDim2.new(0, 30, 1, 0)
 closeBtn.Position = UDim2.new(1, -35, 0, 0)
@@ -268,7 +331,7 @@ bloxInput.FontFace = Font.fromId(12187374765)
 -- --- LOAD STATED-LOGIC SYSTEM FROM GITHUB ---
 local CoreSystem = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/CmdProcessor"))()
 
--- Bind client-side elements directly to core engine (Passing ledGradient reference)
+-- Bind client-side elements directly to core engine (Exposing main and the circle gradients)
 local systemAPI = CoreSystem.Init({
     APIKey = _G.TERMINAL_KEY,
     OutputLabel = output,
@@ -278,6 +341,13 @@ local systemAPI = CoreSystem.Init({
     BloxScroll = bloxScroll,
     LedGradient = ledGradient
 })
+
+-- Handle setting custom LED colors dynamically from CmdProcessor references
+RunService.Stepped:Connect(function()
+    if toggleGradient then
+        toggleGradient.Color = ledGradient.Color
+    end
+end)
 
 -- --- INTERACTION PASS-THROUGHS (SERIALIZED AS JSON DATA) ---
 input.FocusLost:Connect(function(enter) 
@@ -298,7 +368,7 @@ aiInput.FocusLost:Connect(function(enter)
             data = aiInput.Text
         })
         systemAPI.ReceiveJSON(dataPacket)
-        input.Text = ""
+        aiInput.Text = ""
     end
 end)
 
@@ -326,13 +396,3 @@ terminPanelBtn.MouseButton1Click:Connect(function() setPanel("Termin") end)
 bloxPanelBtn.MouseButton1Click:Connect(function() setPanel("ScriptBlox") end)
 
 closeBtn.MouseButton1Click:Connect(function() mainGui:Destroy() end)
-minBtn.MouseButton1Click:Connect(function()
-    local isMin = main.Size.Y.Offset == 30
-    main:TweenSize(isMin and UDim2.new(0, 450, 0, 300) or UDim2.new(0, 450, 0, 30), "Out", "Quad", 0.3, true)
-    sidebar.Visible = isMin
-    if isMin then
-        setPanel(activePanel)
-    else
-        cmdPanel.Visible, terminPanel.Visible, bloxPanel.Visible = false, false, false
-    end
-end)
