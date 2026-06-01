@@ -103,21 +103,15 @@ local function extractCode(text)
     return code
 end
 
--- Helper to convert functions to readable strings for saving
+-- Helper to convert custom library to valid back-up lua module string
 local function convertTableToLuaString(tbl)
     local raw = "local ScriptLibrary = {\n    Catalog = {\n"
     for _, item in ipairs(tbl) do
-        -- Try to inspect string payload if custom serializing is needed
-        local functionString = "function() end"
-        local info = debug.getinfo(item.Execute)
-        if info and info.source then
-            -- Note: in some executors, debug.source gives the file name or complete block
-            functionString = "function()\n        -- Source: " .. tostring(info.source) .. "\n    end"
-        end
         raw = raw .. "        {\n"
-        raw = raw .. "            Name = \"" .. tostring(item.Name) .. "\",\n"
-        raw = raw .. "            Game = \"" .. tostring(item.Game) .. "\",\n"
-        raw = raw .. "            Execute = " .. functionString .. "\n"
+        raw = raw .. "            Name = [[" .. tostring(item.Name) .. "]],\n"
+        raw = raw .. "            Game = [[" .. tostring(item.Game) .. "]],\n"
+        raw = raw .. "            RawCode = [[" .. tostring(item.RawCode) .. "]],\n"
+        raw = raw .. "            Execute = function()\n                " .. tostring(item.RawCode):gsub("\n", "\n                ") .. "\n            end\n"
         raw = raw .. "        },\n"
     end
     raw = raw .. "    }\n}\nreturn ScriptLibrary"
@@ -330,7 +324,6 @@ function API.ExecuteCommand(rawInput)
                 task.spawn(function()
                     local success, err = pcall(function()
                         if writefile then
-                            -- Generate a fully formatted table config
                             local serialized = convertTableToLuaString(loadedLibrary.Catalog)
                             writefile("script_library_backup.lua", serialized)
                         else
@@ -350,7 +343,7 @@ function API.ExecuteCommand(rawInput)
             printMsg("Package '" .. pkgName .. "' is not recognized for system-save.", false, true)
         end
 
-    -- Save a single script out of the catalog (e.g. save package 15)
+    -- Save a single script out of the catalog using exact raw loadstring definitions
     elseif raw:match("^save package (%d+)$") then
         found = true
         local idx = tonumber(raw:match("^save package (%d+)$"))
@@ -360,22 +353,11 @@ function API.ExecuteCommand(rawInput)
             task.spawn(function()
                 local success, err = pcall(function()
                     if writefile then
-                        -- Get raw function script context where possible, otherwise serialize function
-                        local info = debug.getinfo(scriptItem.Execute)
-                        local sourceStr = "-- Standalone execution file for: " .. scriptItem.Name .. "\n"
-                        if info and info.source then
-                            sourceStr = sourceStr .. "-- Source: " .. tostring(info.source) .. "\n"
-                        end
-                        -- Pack execution inside runnable closure
-                        sourceStr = sourceStr .. "task.spawn(function()\n"
-                        -- Extract function info or use a generic loadstring call representing it
-                        sourceStr = sourceStr .. "    -- Check your scriptLibrary package code for the direct raw links.\n"
-                        sourceStr = sourceStr .. "    -- Triggering script execute sequence...\n"
-                        sourceStr = sourceStr .. "end)"
-                        
-                        -- Save to file named after the script (removing spaces)
+                        -- Check if RawCode is provided, fallback if empty
+                        local codeToWrite = scriptItem.RawCode or "-- No execution strings registered."
                         local safeName = scriptItem.Name:gsub("%s+", "_") .. ".lua"
-                        writefile(safeName, sourceStr)
+                        
+                        writefile(safeName, codeToWrite)
                         printMsg("SUCCESS: Standalone saved as '" .. safeName .. "'!", true)
                     else
                         error("Executor does not support writefile API")
