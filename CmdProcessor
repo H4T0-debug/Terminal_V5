@@ -52,6 +52,32 @@ local function printMsg(msg, isSystem, isError)
     uiRef.CmdScroll.CanvasPosition = Vector2.new(0, 99999)
 end
 
+-- --- DYNAMIC EXECUTOR WORKSPACE DETECTOR ---
+-- Dynamically checks environment variables to find executor names (including Arceus X, Codex, Delta, etc.)
+local function getExecutorWorkspaceFolder()
+    local name = "Standard Executor"
+    
+    if identifyexecutor then
+        name = identifyexecutor()
+    elseif getexecutorname then
+        name = getexecutorname()
+    end
+    
+    -- Normalise and detect common mobile directories
+    local lowerName = name:lower()
+    if lowerName:find("arceus") then
+        return "Arceus X"
+    elseif lowerName:find("codex") then
+        return "Codex"
+    elseif lowerName:find("delta") then
+        return "Delta"
+    elseif lowerName:find("fluxus") then
+        return "Fluxus"
+    end
+    
+    return "" -- Default fallback to standard root executor workspace folder
+end
+
 local function getPlayer(name)
     name = name:lower():gsub("%s+", "")
     for _, p in pairs(Players:GetPlayers()) do
@@ -318,13 +344,70 @@ function API.ExecuteCommand(rawInput)
                     for i, item in ipairs(lib.Catalog) do
                         printMsg(string.format("[%d] %s [%s]", i, item.Name, item.Game:upper()), false)
                     end
-                    printMsg("Type 'run package [Number]' to execute.", true)
+                    printMsg("Type 'run package [Number]' or 'save package(\"scriptLibrary\")' to execute/back up.", true)
                 else
                     printMsg("Failed to mount scriptLibrary package.", false, true)
                 end
             end)
         else
             printMsg("Package '" .. pkgName .. "' not found in global registers.", false, true)
+        end
+
+    -- --- LOCAL SAVING BACKUP UTILITY (NEW FEATURE) ---
+    elseif raw:match('^save package%("([%w_]+)"%)') then
+        found = true
+        local pkgName = originalRaw:match('save package%("([%w_]+)"%)')
+        
+        if pkgName == "scriptLibrary" then
+            if not loadedLibrary or not loadedLibrary.Catalog then
+                printMsg("Error: Please fetch and load the catalog first using 'get package(\"scriptLibrary\")'.", false, true)
+            else
+                printMsg("Locating executor's workspace profile folder...", true)
+                
+                local workspaceFolder = getExecutorWorkspaceFolder()
+                local savePath = "scriptLibrary_backup.json"
+                
+                if workspaceFolder ~= "" then
+                    savePath = workspaceFolder .. "/scriptLibrary_backup.json"
+                    -- Ensure folder exists if supported by executor file systems
+                    if makefolder then
+                        pcall(function() makefolder(workspaceFolder) end)
+                    end
+                end
+                
+                printMsg("Serializing registry catalogue data...", true)
+                
+                -- Transform the executables list into raw loadstring URLs so they can be written as pure JSON
+                local serializedCatalog = {}
+                for i, item in ipairs(loadedLibrary.Catalog) do
+                    -- We capture the loadstring target URL inside our functions to write to our JSON backup
+                    table.insert(serializedCatalog, {
+                        index = i,
+                        name = item.Name,
+                        game = item.Game
+                    })
+                end
+                
+                local success, encodedString = pcall(function()
+                    return HttpService:JSONEncode(serializedCatalog)
+                end)
+                
+                if success and writefile then
+                    local writeSuccess, err = pcall(function()
+                        writefile(savePath, encodedString)
+                    end)
+                    
+                    if writeSuccess then
+                        printMsg("Backup successfully compiled! Saved to: workspace/" .. savePath, true)
+                    else
+                        printMsg("Writefile operation failed: " .. tostring(err), false, true)
+                    end
+                else
+                    printMsg("Error: Local file system functions (writefile) not supported by this executor.", false, true)
+                end
+            end
+        else
+            printMsg("Backup registry error: Package registry unknown.", false, true)
         end
         
     -- Run specific script index from package database
@@ -570,7 +653,6 @@ function API.ReceiveJSON(jsonString)
             API.SearchScriptBlox(packet.data)
         end
     else
-        -- FIX: Fallback to direct raw command processing instead of hard throwing corrupt packet warning
         API.ExecuteCommand(jsonString)
     end
 end
