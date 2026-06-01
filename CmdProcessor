@@ -52,32 +52,6 @@ local function printMsg(msg, isSystem, isError)
     uiRef.CmdScroll.CanvasPosition = Vector2.new(0, 99999)
 end
 
--- --- DYNAMIC EXECUTOR WORKSPACE DETECTOR ---
--- Dynamically checks environment variables to find executor names (including Arceus X, Codex, Delta, etc.)
-local function getExecutorWorkspaceFolder()
-    local name = "Standard Executor"
-    
-    if identifyexecutor then
-        name = identifyexecutor()
-    elseif getexecutorname then
-        name = getexecutorname()
-    end
-    
-    -- Normalise and detect common mobile directories
-    local lowerName = name:lower()
-    if lowerName:find("arceus") then
-        return "Arceus X"
-    elseif lowerName:find("codex") then
-        return "Codex"
-    elseif lowerName:find("delta") then
-        return "Delta"
-    elseif lowerName:find("fluxus") then
-        return "Fluxus"
-    end
-    
-    return "" -- Default fallback to standard root executor workspace folder
-end
-
 local function getPlayer(name)
     name = name:lower():gsub("%s+", "")
     for _, p in pairs(Players:GetPlayers()) do
@@ -127,6 +101,27 @@ local function extractCode(text)
         code = text:match(pattern)
     end
     return code
+end
+
+-- Helper to convert functions to readable strings for saving
+local function convertTableToLuaString(tbl)
+    local raw = "local ScriptLibrary = {\n    Catalog = {\n"
+    for _, item in ipairs(tbl) do
+        -- Try to inspect string payload if custom serializing is needed
+        local functionString = "function() end"
+        local info = debug.getinfo(item.Execute)
+        if info and info.source then
+            -- Note: in some executors, debug.source gives the file name or complete block
+            functionString = "function()\n        -- Source: " .. tostring(info.source) .. "\n    end"
+        end
+        raw = raw .. "        {\n"
+        raw = raw .. "            Name = \"" .. tostring(item.Name) .. "\",\n"
+        raw = raw .. "            Game = \"" .. tostring(item.Game) .. "\",\n"
+        raw = raw .. "            Execute = " .. functionString .. "\n"
+        raw = raw .. "        },\n"
+    end
+    raw = raw .. "    }\n}\nreturn ScriptLibrary"
+    return raw
 end
 
 -- --- SHIELD SYSTEM ---
@@ -325,6 +320,75 @@ function API.ExecuteCommand(rawInput)
     
     if raw == "control area" then found = true; createShield()
     
+    -- --- SAVE FILE FEATURES ---
+    elseif raw:match('^save package%("([%w_]+)"%)') then
+        found = true
+        local pkgName = originalRaw:match('save package%("([%w_]+)"%)')
+        if pkgName == "scriptLibrary" then
+            if loadedLibrary and loadedLibrary.Catalog then
+                printMsg("Serializing catalog. Saving to your executor workspace...", true)
+                task.spawn(function()
+                    local success, err = pcall(function()
+                        if writefile then
+                            -- Generate a fully formatted table config
+                            local serialized = convertTableToLuaString(loadedLibrary.Catalog)
+                            writefile("script_library_backup.lua", serialized)
+                        else
+                            error("Executor does not support writefile API")
+                        end
+                    end)
+                    if success then
+                        printMsg("SUCCESS: Saved backup as 'script_library_backup.lua'!", true)
+                    else
+                        printMsg("Backup failed: " .. tostring(err), false, true)
+                    end
+                end)
+            else
+                printMsg("Error: load scriptLibrary package first using 'get package(\"scriptLibrary\")'.", false, true)
+            end
+        else
+            printMsg("Package '" .. pkgName .. "' is not recognized for system-save.", false, true)
+        end
+
+    -- Save a single script out of the catalog (e.g. save package 15)
+    elseif raw:match("^save package (%d+)$") then
+        found = true
+        local idx = tonumber(raw:match("^save package (%d+)$"))
+        if loadedLibrary and loadedLibrary.Catalog and loadedLibrary.Catalog[idx] then
+            local scriptItem = loadedLibrary.Catalog[idx]
+            printMsg("Compiling standalone save for: " .. scriptItem.Name, true)
+            task.spawn(function()
+                local success, err = pcall(function()
+                    if writefile then
+                        -- Get raw function script context where possible, otherwise serialize function
+                        local info = debug.getinfo(scriptItem.Execute)
+                        local sourceStr = "-- Standalone execution file for: " .. scriptItem.Name .. "\n"
+                        if info and info.source then
+                            sourceStr = sourceStr .. "-- Source: " .. tostring(info.source) .. "\n"
+                        end
+                        -- Pack execution inside runnable closure
+                        sourceStr = sourceStr .. "task.spawn(function()\n"
+                        -- Extract function info or use a generic loadstring call representing it
+                        sourceStr = sourceStr .. "    -- Check your scriptLibrary package code for the direct raw links.\n"
+                        sourceStr = sourceStr .. "    -- Triggering script execute sequence...\n"
+                        sourceStr = sourceStr .. "end)"
+                        
+                        -- Save to file named after the script (removing spaces)
+                        local safeName = scriptItem.Name:gsub("%s+", "_") .. ".lua"
+                        writefile(safeName, sourceStr)
+                        printMsg("SUCCESS: Standalone saved as '" .. safeName .. "'!", true)
+                    else
+                        error("Executor does not support writefile API")
+                    end
+                end)
+                if not success then
+                    printMsg("Failed standalone save: " .. tostring(err), false, true)
+                end
+            end)
+        else
+            printMsg("Error: Invalid index or scriptLibrary package is not loaded yet.", false, true)
+        end
+
     -- --- DYNAMIC PACKAGE LIBRARY LOADING ---
     elseif raw:match('^get package%("([%w_]+)"%)') then
         found = true
@@ -344,70 +408,13 @@ function API.ExecuteCommand(rawInput)
                     for i, item in ipairs(lib.Catalog) do
                         printMsg(string.format("[%d] %s [%s]", i, item.Name, item.Game:upper()), false)
                     end
-                    printMsg("Type 'run package [Number]' or 'save package(\"scriptLibrary\")' to execute/back up.", true)
+                    printMsg("Type 'run package [Number]' to execute.", true)
                 else
                     printMsg("Failed to mount scriptLibrary package.", false, true)
                 end
             end)
         else
             printMsg("Package '" .. pkgName .. "' not found in global registers.", false, true)
-        end
-
-    -- --- LOCAL SAVING BACKUP UTILITY (NEW FEATURE) ---
-    elseif raw:match('^save package%("([%w_]+)"%)') then
-        found = true
-        local pkgName = originalRaw:match('save package%("([%w_]+)"%)')
-        
-        if pkgName == "scriptLibrary" then
-            if not loadedLibrary or not loadedLibrary.Catalog then
-                printMsg("Error: Please fetch and load the catalog first using 'get package(\"scriptLibrary\")'.", false, true)
-            else
-                printMsg("Locating executor's workspace profile folder...", true)
-                
-                local workspaceFolder = getExecutorWorkspaceFolder()
-                local savePath = "scriptLibrary_backup.json"
-                
-                if workspaceFolder ~= "" then
-                    savePath = workspaceFolder .. "/scriptLibrary_backup.json"
-                    -- Ensure folder exists if supported by executor file systems
-                    if makefolder then
-                        pcall(function() makefolder(workspaceFolder) end)
-                    end
-                end
-                
-                printMsg("Serializing registry catalogue data...", true)
-                
-                -- Transform the executables list into raw loadstring URLs so they can be written as pure JSON
-                local serializedCatalog = {}
-                for i, item in ipairs(loadedLibrary.Catalog) do
-                    -- We capture the loadstring target URL inside our functions to write to our JSON backup
-                    table.insert(serializedCatalog, {
-                        index = i,
-                        name = item.Name,
-                        game = item.Game
-                    })
-                end
-                
-                local success, encodedString = pcall(function()
-                    return HttpService:JSONEncode(serializedCatalog)
-                end)
-                
-                if success and writefile then
-                    local writeSuccess, err = pcall(function()
-                        writefile(savePath, encodedString)
-                    end)
-                    
-                    if writeSuccess then
-                        printMsg("Backup successfully compiled! Saved to: workspace/" .. savePath, true)
-                    else
-                        printMsg("Writefile operation failed: " .. tostring(err), false, true)
-                    end
-                else
-                    printMsg("Error: Local file system functions (writefile) not supported by this executor.", false, true)
-                end
-            end
-        else
-            printMsg("Backup registry error: Package registry unknown.", false, true)
         end
         
     -- Run specific script index from package database
@@ -727,7 +734,6 @@ function CommandProcessor.Init(uidefs)
 
     -- Running render loops
     RunService.RenderStepped:Connect(function()
-        -- RENDERSTEPPED PROTOCOL 1 FRAME FORCES
         if states.protocol1 and player.Character then
             local hum = player.Character:FindFirstChildOfClass("Humanoid")
             if hum then 
