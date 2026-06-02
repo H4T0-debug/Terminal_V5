@@ -39,6 +39,25 @@ local states = {
     lastScrapedData = "No game data captured yet."
 }
 
+-- Static Mapping for package saving & offline/rejoin execution
+local LibraryMappings = {
+    [1] = "Hiru_Hub.lua",
+    [2] = "QuantumOnyx_Project.lua",
+    [3] = "Ringta_Scripts_(Patched).lua",
+    [4] = "Redz_Hub_(Beta).lua",
+    [5] = "Zee_Hub.lua",
+    [6] = "Dex_Explorer.lua",
+    [7] = "ThanHub.lua",
+    [8] = "NatHub.lua",
+    [9] = "H4X_Hub.lua",
+    [10] = "Infinite_Yield_FE.lua",
+    [11] = "Gravity_Hub.lua",
+    [12] = "Terminal_V5.0.lua",
+    [13] = "FoxName.lua",
+    [14] = "Ringta_Hub_V2.lua",
+    [15] = "Vape_Voidware.lua"
+}
+
 local loadedLibrary = nil -- Stores the library data once downloaded
 local connections = {}
 local shieldInstance = nil
@@ -343,7 +362,7 @@ function API.ExecuteCommand(rawInput)
             printMsg("Package '" .. pkgName .. "' is not recognized for system-save.", false, true)
         end
 
-    -- Save a single script out of the catalog using exact raw loadstring definitions
+    -- Save single script using precise static filenames
     elseif raw:match("^save package (%d+)$") then
         found = true
         local idx = tonumber(raw:match("^save package (%d+)$"))
@@ -353,9 +372,9 @@ function API.ExecuteCommand(rawInput)
             task.spawn(function()
                 local success, err = pcall(function()
                     if writefile then
-                        -- Check if RawCode is provided, fallback if empty
                         local codeToWrite = scriptItem.RawCode or "-- No execution strings registered."
-                        local safeName = scriptItem.Name:gsub("%s+", "_") .. ".lua"
+                        -- Guarantee exact filename mapping matches LibraryMappings index
+                        local safeName = LibraryMappings[idx] or (scriptItem.Name:gsub("%s+", "_") .. ".lua")
                         
                         writefile(safeName, codeToWrite)
                         printMsg("SUCCESS: Standalone saved as '" .. safeName .. "'!", true)
@@ -399,13 +418,35 @@ function API.ExecuteCommand(rawInput)
             printMsg("Package '" .. pkgName .. "' not found in global registers.", false, true)
         end
         
-    -- Run specific script index from package database
+    -- Run specific script index (Scans local workspace backups FIRST)
     elseif raw:match("^run package (%d+)$") then
         found = true
         local idx = tonumber(raw:match("^run package (%d+)$"))
-        if loadedLibrary and loadedLibrary.Catalog and loadedLibrary.Catalog[idx] then
+        local localFileName = LibraryMappings[idx]
+        
+        -- CHECK EXECUTOR DIRECTORY FOR AN OFFLINE BACKUP FIRST
+        if localFileName and isfile and isfile(localFileName) then
+            printMsg("Offline local backup detected: '" .. localFileName .. "'. Loading...", true)
+            task.spawn(function()
+                local success, content = pcall(function() return readfile(localFileName) end)
+                if success and content then
+                    local runSuccess, err = pcall(function()
+                        loadstring(content)()
+                    end)
+                    if runSuccess then
+                        printMsg("Successfully loaded local standalone script!", true)
+                    else
+                        printMsg("Execution Error: " .. tostring(err), false, true)
+                    end
+                else
+                    printMsg("Failed to read local standalone file.", false, true)
+                end
+            end)
+            
+        -- FALLBACK TO ONLINE CATALOG ONLY IF NO LOCAL BACKUP FILE EXISTS
+        elseif loadedLibrary and loadedLibrary.Catalog and loadedLibrary.Catalog[idx] then
             local scriptItem = loadedLibrary.Catalog[idx]
-            printMsg("Compiling & mounting: " .. scriptItem.Name, true)
+            printMsg("Compiling & mounting from remote catalog: " .. scriptItem.Name, true)
             task.spawn(function()
                 local success, err = pcall(scriptItem.Execute)
                 if success then
@@ -415,7 +456,11 @@ function API.ExecuteCommand(rawInput)
                 end
             end)
         else
-            printMsg("Error: Invalid index or scriptLibrary package is not loaded yet.", false, true)
+            if localFileName then
+                printMsg("Error: Local backup '" .. localFileName .. "' not found. Type 'get package(\"scriptLibrary\")' to fetch catalogs from GitHub.", false, true)
+            else
+                printMsg("Error: Invalid package index.", false, true)
+            end
         end
         
     -- --- NEW AIMBOT COMMANDS ---
