@@ -1,4 +1,4 @@
--- --- Terminal V5.1 Bootloader ---
+-- --- Terminal V5.2 Bootloader ---
 
 -- 1. Securely fetch the API key from local workspace
 local function getLocalKey()
@@ -15,13 +15,6 @@ end
 
 _G.TERMINAL_KEY = getLocalKey()
 
--- 2. Load the main script from GitHub
-if _G.TERMINAL_KEY then
-    print("[SYSTEM]: Key validated. Loading Terminal V5.1 UI...")
-else
-    warn("[SYSTEM]: Boot aborted due to missing API Key.")
-end
-
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
@@ -30,150 +23,165 @@ local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- --- UI SETUP ---
+-- --- GLOBAL GUI BASE ---
 local mainGui = Instance.new("ScreenGui", playerGui)
-mainGui.Name = "TerminalV5"
+mainGui.Name = "TerminalV5_Unified"
 mainGui.ResetOnSpawn = false
 
-local main = Instance.new("Frame", mainGui)
-main.Size = UDim2.new(0, 450, 0, 300)
-main.Position = UDim2.new(0.5, -225, 0.5, -150)
-main.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-main.Active = true
-main.Draggable = true
-Instance.new("UICorner", main)
+-- --- 1. DEFAULT FULL-SCREEN CONSOLE UI ---
+local defaultUI = Instance.new("Frame", mainGui)
+defaultUI.Name = "DefaultUI"
+defaultUI.Size = UDim2.new(1, 0, 1, 0)
+defaultUI.Position = UDim2.new(0, 0, 0, 0)
+defaultUI.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
+defaultUI.BackgroundTransparency = 0.25
+defaultUI.Visible = true
 
--- --- ANIMATED NEON LED EDGES (DARK PINK & DARK BLUE BY DEFAULT) ---
-local ledStroke = Instance.new("UIStroke", main)
+local defScroll = Instance.new("ScrollingFrame", defaultUI)
+defScroll.Size = UDim2.new(1, -20, 1, -60)
+defScroll.Position = UDim2.new(0, 10, 0, 10)
+defScroll.BackgroundTransparency = 1
+defScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+defScroll.ScrollBarThickness = 4
+defScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+
+local defLayout = Instance.new("UIListLayout", defScroll)
+defLayout.SortOrder = Enum.SortOrder.LayoutOrder
+defLayout.Padding = UDim.new(0, 4)
+
+-- Input line container
+local defInputLine = Instance.new("Frame", defaultUI)
+defInputLine.Size = UDim2.new(1, -20, 0, 30)
+defInputLine.Position = UDim2.new(0, 10, 1, -40)
+defInputLine.BackgroundTransparency = 1
+
+local defPrefix = Instance.new("TextLabel", defInputLine)
+defPrefix.Size = UDim2.new(0, 140, 1, 0)
+defPrefix.BackgroundTransparency = 1
+defPrefix.Text = "Enter command: "
+defPrefix.TextColor3 = Color3.fromRGB(255, 255, 255)
+defPrefix.TextSize = 16
+defPrefix.Font = Enum.Font.Code
+defPrefix.TextXAlignment = Enum.TextXAlignment.Left
+
+local defTextBox = Instance.new("TextBox", defInputLine)
+defTextBox.Size = UDim2.new(1, -150, 1, 0)
+defTextBox.Position = UDim2.new(0, 140, 0, 0)
+defTextBox.BackgroundTransparency = 1
+defTextBox.Text = ""
+defTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+defTextBox.TextSize = 16
+defTextBox.Font = Enum.Font.Code
+defTextBox.TextXAlignment = Enum.TextXAlignment.Left
+defTextBox.ClearTextOnFocus = false
+
+-- Blinking cursor simulation
+local defCursor = Instance.new("TextLabel", defTextBox)
+defCursor.Size = UDim2.new(0, 15, 1, 0)
+defCursor.BackgroundTransparency = 1
+defCursor.Text = "_"
+defCursor.TextColor3 = Color3.fromRGB(255, 255, 255)
+defCursor.TextSize = 16
+defCursor.Font = Enum.Font.Code
+defCursor.TextXAlignment = Enum.TextXAlignment.Left
+
+task.spawn(function()
+    while mainGui and mainGui.Parent do
+        defCursor.Visible = not defCursor.Visible
+        task.wait(0.5)
+    end
+end)
+
+local function updateCursorPosition()
+    local textWidth = game:GetService("TextService"):GetTextSize(
+        defTextBox.Text, 
+        defTextBox.TextSize, 
+        defTextBox.Font, 
+        Vector2.new(10000, 100)
+    ).X
+    defCursor.Position = UDim2.new(0, textWidth + 2, 0, 0)
+end
+defTextBox:GetPropertyChangedSignal("Text"):Connect(updateCursorPosition)
+
+-- Default Close/Hide Button
+local defClose = Instance.new("TextButton", defaultUI)
+defClose.Size = UDim2.new(0, 30, 0, 30)
+defClose.Position = UDim2.new(1, -40, 0, 10)
+defClose.BackgroundTransparency = 1
+defClose.Text = "×"
+defClose.TextColor3 = Color3.fromRGB(255, 100, 100)
+defClose.TextSize = 30
+
+-- --- 2. PREMIUM CLI / SIDEBAR UI PANEL ---
+local cliUI = Instance.new("Frame", mainGui)
+cliUI.Name = "CLIUI"
+cliUI.Size = UDim2.new(0, 450, 0, 300)
+cliUI.Position = UDim2.new(0.5, -225, 0.5, -150)
+cliUI.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+cliUI.Active = true
+cliUI.Draggable = true
+cliUI.Visible = false
+Instance.new("UICorner", cliUI)
+
+-- --- ANIMATED NEON LED EDGES (CLI ONLY) ---
+local ledStroke = Instance.new("UIStroke", cliUI)
 ledStroke.Thickness = 2.5
 ledStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-ledStroke.Color = Color3.fromRGB(255, 255, 255) -- Base white to allow multiplier
+ledStroke.Color = Color3.fromRGB(255, 255, 255)
 
 local ledGradient = Instance.new("UIGradient", ledStroke)
 ledGradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0.00, Color3.fromRGB(230, 0, 115)),  -- Vivid Neon Dark Pink
-    ColorSequenceKeypoint.new(0.25, Color3.fromRGB(0, 35, 160)),   -- Vivid Neon Dark Blue
-    ColorSequenceKeypoint.new(0.50, Color3.fromRGB(230, 0, 115)),  -- Vivid Neon Dark Pink
-    ColorSequenceKeypoint.new(0.75, Color3.fromRGB(0, 35, 160)),   -- Vivid Neon Dark Blue
-    ColorSequenceKeypoint.new(1.00, Color3.fromRGB(230, 0, 115))   -- Vivid Neon Dark Pink
+    ColorSequenceKeypoint.new(0.00, Color3.fromRGB(230, 0, 115)),  -- Neon Pink
+    ColorSequenceKeypoint.new(0.25, Color3.fromRGB(0, 35, 160)),   -- Neon Blue
+    ColorSequenceKeypoint.new(0.50, Color3.fromRGB(230, 0, 115)),
+    ColorSequenceKeypoint.new(0.75, Color3.fromRGB(0, 35, 160)),
+    ColorSequenceKeypoint.new(1.00, Color3.fromRGB(230, 0, 115))
 })
 
--- --- NEW DRAGGABLE CIRCLE TOGGLE BUTTON ---
-local toggleCircle = Instance.new("Frame", mainGui)
-toggleCircle.Name = "ToggleCircle"
-toggleCircle.Size = UDim2.new(0, 45, 0, 45)
-toggleCircle.Position = UDim2.new(0.1, 0, 0.1, 0) -- Default spawn position
-toggleCircle.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-toggleCircle.Active = true
-Instance.new("UICorner", toggleCircle).CornerRadius = UDim.new(1, 0) -- Perfect Circle
-
-local toggleStroke = Instance.new("UIStroke", toggleCircle)
-toggleStroke.Thickness = 2
-toggleStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-toggleStroke.Color = Color3.fromRGB(255, 255, 255)
-
-local toggleGradient = Instance.new("UIGradient", toggleStroke)
-toggleGradient.Color = ledGradient.Color
-
-local toggleLabel = Instance.new("TextLabel", toggleCircle)
-toggleLabel.Size = UDim2.new(1, 0, 1, 0)
-toggleLabel.BackgroundTransparency = 1
-toggleLabel.Text = "T"
-toggleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleLabel.TextSize = 22
-toggleLabel.FontFace = Font.fromId(12187374765)
-
--- Dynamic RGB LED Flow Animation Loop (Synchronized)
 task.spawn(function()
-    local rotSpeed = 110 -- Speed of rotation/flow
+    local rotSpeed = 110
     while mainGui and mainGui.Parent do
         local dt = RunService.RenderStepped:Wait()
-        local nextRotation = (ledGradient.Rotation + (rotSpeed * dt)) % 360
-        ledGradient.Rotation = nextRotation
-        toggleGradient.Rotation = nextRotation
+        ledGradient.Rotation = (ledGradient.Rotation + (rotSpeed * dt)) % 360
     end
 end)
 
--- Custom Mobile-Optimized Drag & Click Handler for Circle Toggle
-local dragging = false
-local dragInput
-local dragStart
-local startPos
-local moved = false
+local cliHeader = Instance.new("Frame", cliUI)
+cliHeader.Size = UDim2.new(1, 0, 0, 30)
+cliHeader.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+Instance.new("UICorner", cliHeader)
 
-toggleCircle.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        moved = false
-        dragStart = input.Position
-        startPos = toggleCircle.Position
+local cliTitle = Instance.new("TextLabel", cliHeader)
+cliTitle.Size = UDim2.new(1, -50, 1, 0)
+cliTitle.Position = UDim2.new(0, 10, 0, 0)
+cliTitle.Text = "-TERMINAL V5.0-"
+cliTitle.TextColor3 = Color3.new(1, 1, 1)
+cliTitle.TextSize = 18
+cliTitle.TextXAlignment = "Left"
+cliTitle.BackgroundTransparency = 1
+cliTitle.FontFace = Font.fromId(12187374765)
 
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-                if not moved then
-                    -- Triggered click/tap because no significant motion delta was recorded
-                    main.Visible = not main.Visible
-                end
-            end
-        end)
-    end
-end)
+local cliClose = Instance.new("TextButton", cliHeader)
+cliClose.Size = UDim2.new(0, 30, 1, 0)
+cliClose.Position = UDim2.new(1, -35, 0, 0)
+cliClose.Text = "×"
+cliClose.TextColor3 = Color3.fromRGB(255, 100, 100)
+cliClose.BackgroundTransparency = 1
+cliClose.TextSize = 24
 
-toggleCircle.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        dragInput = input
-    end
-end)
+-- Sidebar elements
+local cliSidebar = Instance.new("Frame", cliUI)
+cliSidebar.Size = UDim2.new(0, 80, 1, -30)
+cliSidebar.Position = UDim2.new(0, 0, 0, 30)
+cliSidebar.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Instance.new("UICorner", cliSidebar)
 
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        if delta.Magnitude > 5 then
-            moved = true
-        end
-        toggleCircle.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-
-local header = Instance.new("Frame", main)
-header.Size = UDim2.new(1, 0, 0, 30)
-header.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-Instance.new("UICorner", header)
-
-local title = Instance.new("TextLabel", header)
-title.Size = UDim2.new(1, -50, 1, 0)
-title.Position = UDim2.new(0, 10, 0, 0)
-title.Text = "-TERMINAL V5.0-"
-title.TextColor3 = Color3.new(1, 1, 1)
-title.TextSize = 18
-title.TextXAlignment = "Left"
-title.BackgroundTransparency = 1
-title.FontFace = Font.fromId(12187374765)
-
--- Minimize Button has been fully deleted. Close button is aligned properly.
-local closeBtn = Instance.new("TextButton", header)
-closeBtn.Size = UDim2.new(0, 30, 1, 0)
-closeBtn.Position = UDim2.new(1, -35, 0, 0)
-closeBtn.Text = "×"
-closeBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
-closeBtn.BackgroundTransparency = 1
-closeBtn.TextSize = 24
-
--- --- SIDEBAR ---
-local sidebar = Instance.new("Frame", main)
-sidebar.Size = UDim2.new(0, 80, 1, -30)
-sidebar.Position = UDim2.new(0, 0, 0, 30)
-sidebar.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-sidebar.BorderSizePixel = 0
-Instance.new("UICorner", sidebar)
-
-local sidebarLayout = Instance.new("UIListLayout", sidebar)
-sidebarLayout.Padding = UDim.new(0, 5)
-sidebarLayout.HorizontalAlignment = "Center"
+local cliSidebarLayout = Instance.new("UIListLayout", cliSidebar)
+cliSidebarLayout.Padding = UDim.new(0, 5)
+cliSidebarLayout.HorizontalAlignment = "Center"
 
 local function createSidebarBtn(text)
-    local btn = Instance.new("TextButton", sidebar)
+    local btn = Instance.new("TextButton", cliSidebar)
     btn.Size = UDim2.new(0, 70, 0, 35)
     btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
     btn.Text = text
@@ -184,215 +192,307 @@ local function createSidebarBtn(text)
     return btn
 end
 
-local cmdPanelBtn = createSidebarBtn("CMD")
-local terminPanelBtn = createSidebarBtn("Termin")
-local bloxPanelBtn = createSidebarBtn("ScriptBlox")
+local cmdBtn = createSidebarBtn("CMD")
+local aiBtn = createSidebarBtn("Termin")
+local bloxBtn = createSidebarBtn("ScriptBlox")
 
--- --- CMD PANEL ---
-local cmdPanel = Instance.new("Frame", main)
-cmdPanel.Size = UDim2.new(1, -90, 1, -30)
-cmdPanel.Position = UDim2.new(0, 85, 0, 30)
-cmdPanel.BackgroundTransparency = 1
-cmdPanel.Visible = true
+-- CLI CMD panel
+local cliCmdPanel = Instance.new("Frame", cliUI)
+cliCmdPanel.Size = UDim2.new(1, -90, 1, -30)
+cliCmdPanel.Position = UDim2.new(0, 85, 0, 30)
+cliCmdPanel.BackgroundTransparency = 1
+cliCmdPanel.Visible = true
 
-local scroll = Instance.new("ScrollingFrame", cmdPanel)
-scroll.Size = UDim2.new(1, -5, 1, -45)
-scroll.Position = UDim2.new(0, 0, 0, 5)
-scroll.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-scroll.AutomaticCanvasSize = "Y"
-scroll.ScrollBarThickness = 4
-Instance.new("UICorner", scroll)
+local cliCmdScroll = Instance.new("ScrollingFrame", cliCmdPanel)
+cliCmdScroll.Size = UDim2.new(1, -5, 1, -45)
+cliCmdScroll.Position = UDim2.new(0, 0, 0, 5)
+cliCmdScroll.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+cliCmdScroll.AutomaticCanvasSize = "Y"
+cliCmdScroll.ScrollBarThickness = 4
+Instance.new("UICorner", cliCmdScroll)
 
-local output = Instance.new("TextLabel", scroll)
-output.Size = UDim2.new(1, -10, 0, 0)
-output.AutomaticSize = "Y"
-output.Position = UDim2.new(0, 5, 0, 5)
-output.TextColor3 = Color3.fromRGB(0, 255, 0)
-output.TextSize = 16
-output.TextXAlignment = "Left"
-output.RichText = true
-output.BackgroundTransparency = 1
-output.FontFace = Font.fromId(12187374765)
-output.TextWrapped = true 
-output.Text = "Terminal V5.0 Online. System scan complete."
+local cliCmdOutput = Instance.new("TextLabel", cliCmdScroll)
+cliCmdOutput.Size = UDim2.new(1, -10, 0, 0)
+cliCmdOutput.AutomaticSize = "Y"
+cliCmdOutput.TextColor3 = Color3.fromRGB(0, 255, 0)
+cliCmdOutput.TextSize = 16
+cliCmdOutput.TextXAlignment = "Left"
+cliCmdOutput.RichText = true
+cliCmdOutput.BackgroundTransparency = 1
+cliCmdOutput.FontFace = Font.fromId(12187374765)
+cliCmdOutput.TextWrapped = true
 
-local bar = Instance.new("Frame", cmdPanel)
-bar.Size = UDim2.new(1, -5, 0, 30)
-bar.Position = UDim2.new(0, 0, 1, -35)
-bar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-Instance.new("UICorner", bar)
+local cliCmdBar = Instance.new("Frame", cliCmdPanel)
+cliCmdBar.Size = UDim2.new(1, -5, 0, 30)
+cliCmdBar.Position = UDim2.new(0, 0, 1, -35)
+cliCmdBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+Instance.new("UICorner", cliCmdBar)
 
-local prefixLabel = Instance.new("TextLabel", bar)
-prefixLabel.Size = UDim2.new(0, 25, 1, 0)
-prefixLabel.Text = "$"
-prefixLabel.TextColor3 = Color3.new(0, 1, 0)
-prefixLabel.TextSize = 18
-prefixLabel.BackgroundTransparency = 1
+local cliCmdPrefix = Instance.new("TextLabel", cliCmdBar)
+cliCmdPrefix.Size = UDim2.new(0, 25, 1, 0)
+cliCmdPrefix.Text = "$"
+cliCmdPrefix.TextColor3 = Color3.new(0, 1, 0)
+cliCmdPrefix.TextSize = 18
+cliCmdPrefix.BackgroundTransparency = 1
 
-local input = Instance.new("TextBox", bar)
-input.Size = UDim2.new(1, -30, 1, 0)
-input.Position = UDim2.new(0, 25, 0, 0)
-input.Text = ""
-input.PlaceholderText = "Enter command..."
-input.TextColor3 = Color3.new(1, 1, 1)
-input.TextSize = 16
-input.TextXAlignment = "Left"
-input.BackgroundTransparency = 1
-input.FontFace = Font.fromId(12187374765)
+local cliCmdInput = Instance.new("TextBox", cliCmdBar)
+cliCmdInput.Size = UDim2.new(1, -30, 1, 0)
+cliCmdInput.Position = UDim2.new(0, 25, 0, 0)
+cliCmdInput.BackgroundTransparency = 1
+cliCmdInput.TextColor3 = Color3.new(1, 1, 1)
+cliCmdInput.TextSize = 16
+cliCmdInput.Font = Enum.Font.Code
+cliCmdInput.TextXAlignment = Enum.TextXAlignment.Left
 
--- --- TERMIN PANEL (AI) ---
-local terminPanel = Instance.new("Frame", main)
-terminPanel.Size = UDim2.new(1, -90, 1, -30)
-terminPanel.Position = UDim2.new(0, 85, 0, 30)
-terminPanel.BackgroundTransparency = 1
-terminPanel.Visible = false
+-- AI and ScriptBlox Panel containers preserved inside CLI context (handled dynamically inside Module)
+local cliAiPanel = Instance.new("Frame", cliUI)
+cliAiPanel.Size = UDim2.new(1, -90, 1, -30)
+cliAiPanel.Position = UDim2.new(0, 85, 0, 30)
+cliAiPanel.BackgroundTransparency = 1
+cliAiPanel.Visible = false
 
-local aiScroll = Instance.new("ScrollingFrame", terminPanel)
-aiScroll.Size = UDim2.new(1, -5, 1, -45)
-aiScroll.Position = UDim2.new(0, 0, 0, 5)
-aiScroll.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-aiScroll.AutomaticCanvasSize = "Y"
-aiScroll.ScrollBarThickness = 4
-Instance.new("UICorner", aiScroll)
+local cliAiScroll = Instance.new("ScrollingFrame", cliAiPanel)
+cliAiScroll.Size = UDim2.new(1, -5, 1, -45)
+cliAiScroll.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+cliAiScroll.AutomaticCanvasSize = "Y"
+cliAiScroll.ScrollBarThickness = 4
+Instance.new("UICorner", cliAiScroll)
 
-local aiOutput = Instance.new("TextLabel", aiScroll)
-aiOutput.Size = UDim2.new(1, -10, 0, 0)
-aiOutput.AutomaticSize = Enum.AutomaticSize.Y 
-aiOutput.Position = UDim2.new(0, 5, 0, 5)
-aiOutput.TextColor3 = Color3.fromRGB(200, 200, 255)
-aiOutput.TextSize = 16
-aiOutput.TextXAlignment = "Left"
-aiOutput.TextYAlignment = "Top"
-aiOutput.RichText = true
-aiOutput.BackgroundTransparency = 1
-aiOutput.FontFace = Font.fromId(12187374765)
-aiOutput.TextWrapped = true 
-aiOutput.Text = "<b>Termin:</b> Connection established. AI ready."
+local cliAiOutput = Instance.new("TextLabel", cliAiScroll)
+cliAiOutput.Size = UDim2.new(1, -10, 0, 0)
+cliAiOutput.AutomaticSize = "Y"
+cliAiOutput.TextColor3 = Color3.fromRGB(200, 200, 255)
+cliAiOutput.TextSize = 16
+cliAiOutput.RichText = true
+cliAiOutput.BackgroundTransparency = 1
 
-local aiBar = Instance.new("Frame", terminPanel)
-aiBar.Size = UDim2.new(1, -5, 0, 30)
-aiBar.Position = UDim2.new(0, 0, 1, -35)
-aiBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-Instance.new("UICorner", aiBar)
+local cliAiBar = Instance.new("Frame", cliAiPanel)
+cliAiBar.Size = UDim2.new(1, -5, 0, 30)
+cliAiBar.Position = UDim2.new(0, 0, 1, -35)
+cliAiBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+Instance.new("UICorner", cliAiBar)
 
-local aiInput = Instance.new("TextBox", aiBar)
-aiInput.Size = UDim2.new(1, -10, 1, 0)
-aiInput.Position = UDim2.new(0, 5, 0, 0)
-aiInput.Text = ""
-aiInput.PlaceholderText = "Message Termin AI..."
-aiInput.TextColor3 = Color3.new(1, 1, 1)
-aiInput.TextSize = 16
-aiInput.TextXAlignment = "Left"
-aiInput.BackgroundTransparency = 1
-aiInput.FontFace = Font.fromId(12187374765)
+local cliAiInput = Instance.new("TextBox", cliAiBar)
+cliAiInput.Size = UDim2.new(1, -10, 1, 0)
+cliAiInput.Position = UDim2.new(0, 5, 0, 0)
+cliAiInput.BackgroundTransparency = 1
+cliAiInput.TextColor3 = Color3.new(1, 1, 1)
+cliAiInput.TextSize = 16
 
--- --- SCRIPTBLOX PANEL ---
-local bloxPanel = Instance.new("Frame", main)
-bloxPanel.Size = UDim2.new(1, -90, 1, -30)
-bloxPanel.Position = UDim2.new(0, 85, 0, 30)
-bloxPanel.BackgroundTransparency = 1
-bloxPanel.Visible = false
+local cliBloxPanel = Instance.new("Frame", cliUI)
+cliBloxPanel.Size = UDim2.new(1, -90, 1, -30)
+cliBloxPanel.Position = UDim2.new(0, 85, 0, 30)
+cliBloxPanel.BackgroundTransparency = 1
+cliBloxPanel.Visible = false
 
-local bloxHeader = Instance.new("TextLabel", bloxPanel)
-bloxHeader.Size = UDim2.new(1, 0, 0, 20)
-bloxHeader.Text = "Powered by ScriptBlox.com"
-bloxHeader.TextColor3 = Color3.fromRGB(255, 150, 0)
-bloxHeader.TextSize = 14
-bloxHeader.BackgroundTransparency = 1
-bloxHeader.FontFace = Font.fromId(12187374765)
+local cliBloxHeader = Instance.new("TextLabel", cliBloxPanel)
+cliBloxHeader.Size = UDim2.new(1, 0, 0, 20)
+cliBloxHeader.Text = "Powered by ScriptBlox.com"
+cliBloxHeader.TextColor3 = Color3.fromRGB(255, 150, 0)
+cliBloxHeader.TextSize = 14
+cliBloxHeader.BackgroundTransparency = 1
 
-local bloxScroll = Instance.new("ScrollingFrame", bloxPanel)
-bloxScroll.Size = UDim2.new(1, -5, 1, -70)
-bloxScroll.Position = UDim2.new(0, 0, 0, 25)
-bloxScroll.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-bloxScroll.AutomaticCanvasSize = "Y"
-bloxScroll.ScrollBarThickness = 4
-Instance.new("UICorner", bloxScroll)
+local cliBloxScroll = Instance.new("ScrollingFrame", cliBloxPanel)
+cliBloxScroll.Size = UDim2.new(1, -5, 1, -70)
+cliBloxScroll.Position = UDim2.new(0, 0, 0, 25)
+cliBloxScroll.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+cliBloxScroll.AutomaticCanvasSize = "Y"
+Instance.new("UICorner", cliBloxScroll)
 
-local bloxList = Instance.new("UIListLayout", bloxScroll)
-bloxList.Padding = UDim.new(0, 5)
+local cliBloxList = Instance.new("UIListLayout", cliBloxScroll)
+cliBloxList.Padding = UDim.new(0, 5)
 
-local bloxBar = Instance.new("Frame", bloxPanel)
-bloxBar.Size = UDim2.new(1, -5, 0, 30)
-bloxBar.Position = UDim2.new(0, 0, 1, -35)
-bloxBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-Instance.new("UICorner", bloxBar)
+local cliBloxBar = Instance.new("Frame", cliBloxPanel)
+cliBloxBar.Size = UDim2.new(1, -5, 0, 30)
+cliBloxBar.Position = UDim2.new(0, 0, 1, -35)
+cliBloxBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+Instance.new("UICorner", cliBloxBar)
 
-local bloxInput = Instance.new("TextBox", bloxBar)
-bloxInput.Size = UDim2.new(1, -10, 1, 0)
-bloxInput.Position = UDim2.new(0, 5, 0, 0)
-bloxInput.Text = ""
-bloxInput.PlaceholderText = "Search scripts on ScriptBlox..."
-bloxInput.TextColor3 = Color3.new(1, 1, 1)
-bloxInput.TextSize = 16
-bloxInput.BackgroundTransparency = 1
-bloxInput.FontFace = Font.fromId(12187374765)
+local cliBloxInput = Instance.new("TextBox", cliBloxBar)
+cliBloxInput.Size = UDim2.new(1, -10, 1, 0)
+cliBloxInput.Position = UDim2.new(0, 5, 0, 0)
+cliBloxInput.BackgroundTransparency = 1
+cliBloxInput.TextColor3 = Color3.new(1, 1, 1)
+
+-- --- T-TOGGLE PERSISTENT HUD BUTTON ---
+local toggleCircle = Instance.new("TextButton", mainGui)
+toggleCircle.Name = "ToggleCircle"
+toggleCircle.Size = UDim2.new(0, 45, 0, 40)
+toggleCircle.Position = UDim2.new(0.5, -22, 0, 10)
+toggleCircle.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+toggleCircle.BackgroundTransparency = 0.5
+toggleCircle.Text = "T"
+toggleCircle.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleCircle.TextSize = 22
+toggleCircle.Font = Enum.Font.SourceSans
+toggleCircle.Visible = false
+Instance.new("UICorner", toggleCircle).CornerRadius = UDim.new(1, 0)
+
+-- Core hide handler
+local function hideAll()
+    defaultUI.Visible = false
+    cliUI.Visible = false
+    toggleCircle.Visible = true
+end
+
+local function showActive()
+    toggleCircle.Visible = false
+    if _G.CurrentUITheme == "CLI" then
+        cliUI.Visible = true
+    else
+        defaultUI.Visible = true
+    end
+end
+
+cliClose.MouseButton1Click:Connect(hideAll)
+defClose.MouseButton1Click:Connect(hideAll)
+toggleCircle.MouseButton1Click:Connect(showActive)
+
+-- Theme visual routers
+_G.CurrentUITheme = "default"
+local function swapUITheme(theme)
+    _G.CurrentUITheme = theme:lower()
+    if _G.CurrentUITheme == "cli" then
+        defaultUI.Visible = false
+        cliUI.Visible = true
+    else
+        defaultUI.Visible = true
+        cliUI.Visible = false
+    end
+end
+
+-- --- CLIENTSIDE DYNAMIC TEXT LOGGER (For full conch lines) ---
+local function printDefaultLine(text, color)
+    local line = Instance.new("TextLabel", defScroll)
+    line.Size = UDim2.new(1, 0, 0, 20)
+    line.BackgroundTransparency = 1
+    line.Text = text
+    line.TextColor3 = color or Color3.fromRGB(0, 160, 255) -- Default Blue
+    line.TextSize = 16
+    line.Font = Enum.Font.Code
+    line.TextXAlignment = Enum.TextXAlignment.Left
+    line.RichText = true
+    line.TextWrapped = true
+    defScroll.CanvasPosition = Vector2.new(0, 999999)
+end
 
 -- --- LOAD STATED-LOGIC SYSTEM FROM GITHUB ---
 local CoreSystem = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/CmdProcessor"))()
 
--- Bind client-side elements directly to core engine (Exposing main and the circle gradients)
 local systemAPI = CoreSystem.Init({
     APIKey = _G.TERMINAL_KEY,
-    OutputLabel = output,
-    AiOutputLabel = aiOutput,
-    CmdScroll = scroll,
-    AiScroll = aiScroll,
-    BloxScroll = bloxScroll,
-    LedGradient = ledGradient
+    OutputLabel = cliCmdOutput,
+    AiOutputLabel = cliAiOutput,
+    CmdScroll = cliCmdScroll,
+    AiScroll = cliAiScroll,
+    BloxScroll = cliBloxScroll,
+    LedGradient = ledGradient,
+    GuiInstance = mainGui,
+    
+    -- Binding Callback API for Fullscreen Render Routing
+    DefaultLog = printDefaultLine,
+    SetInputPrefix = function(newPrefix)
+        defPrefix.Text = newPrefix
+    end,
+    SetUITheme = swapUITheme
 })
 
--- Handle setting custom LED colors dynamically from CmdProcessor references
-RunService.Stepped:Connect(function()
-    if toggleGradient then
-        toggleGradient.Color = ledGradient.Color
+-- --- INITIALIZATION SEQUENCER ---
+local function triggerInitialization()
+    printDefaultLine("Terminal V5.0", Color3.fromRGB(0, 160, 255))
+    task.wait(0.3)
+    printDefaultLine("Initializing modules...", Color3.fromRGB(0, 160, 255))
+    task.wait(1.0) -- Emulating load sequence asynchronously
+    
+    if systemAPI then
+        printDefaultLine("Initialization successful.", Color3.fromRGB(0, 160, 255))
+        task.wait(0.5)
+        printDefaultLine("Fetching game data...", Color3.fromRGB(0, 160, 255))
+        task.wait(0.8)
+        
+        -- Scanning for Remotes
+        local remotes = 0
+        for _, obj in pairs(game:GetDescendants()) do
+            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                remotes = remotes + 1
+            end
+        end
+        
+        printDefaultLine("Fetching game data successful. Found (" .. tostring(remotes) .. ") active secure ports.", Color3.fromRGB(0, 160, 255))
+        task.wait(0.5)
+        printDefaultLine("Waiting for server information...", Color3.fromRGB(0, 160, 255))
+        task.wait(0.7)
+        
+        -- Print statistics
+        printDefaultLine("Current server information:", Color3.fromRGB(0, 160, 255))
+        printDefaultLine("Total player: " .. tostring(#Players:GetPlayers()), Color3.fromRGB(0, 160, 255))
+        printDefaultLine("Current player names:", Color3.fromRGB(0, 160, 255))
+        for i, p in ipairs(Players:GetPlayers()) do
+            printDefaultLine(tostring(i) .. ". " .. p.DisplayName .. " (@" .. p.Name .. ")", Color3.fromRGB(0, 160, 255))
+        end
+        printDefaultLine("Server Place ID: " .. tostring(game.PlaceId), Color3.fromRGB(0, 160, 255))
+        printDefaultLine("Server Job ID: " .. tostring(game.JobId), Color3.fromRGB(0, 160, 255))
+    else
+        printDefaultLine("Initialization failed. Verification mismatch.", Color3.fromRGB(255, 50, 50))
     end
-end)
+end
+task.spawn(triggerInitialization)
 
--- --- INTERACTION PASS-THROUGHS (SERIALIZED AS JSON DATA) ---
-input.FocusLost:Connect(function(enter) 
-    if enter and input.Text ~= "" then 
+-- --- INPUT TRANSFER PACKETS ---
+defTextBox.FocusLost:Connect(function(enter)
+    if enter and defTextBox.Text ~= "" then
+        local text = defTextBox.Text
+        printDefaultLine("Enter command: " .. text, Color3.fromRGB(255, 255, 255))
+        
         local dataPacket = HttpService:JSONEncode({
             type = "command",
-            data = input.Text
+            data = text,
+            sender = "default"
         })
         systemAPI.ReceiveJSON(dataPacket)
-        input.Text = "" 
-    end 
+        defTextBox.Text = ""
+    end
 end)
 
-aiInput.FocusLost:Connect(function(enter)
-    if enter and aiInput.Text ~= "" then
+cliCmdInput.FocusLost:Connect(function(enter)
+    if enter and cliCmdInput.Text ~= "" then
+        local dataPacket = HttpService:JSONEncode({
+            type = "command",
+            data = cliCmdInput.Text,
+            sender = "cli"
+        })
+        systemAPI.ReceiveJSON(dataPacket)
+        cliCmdInput.Text = ""
+    end
+end)
+
+cliAiInput.FocusLost:Connect(function(enter)
+    if enter and cliAiInput.Text ~= "" then
         local dataPacket = HttpService:JSONEncode({
             type = "ai",
-            data = aiInput.Text
+            data = cliAiInput.Text
         })
         systemAPI.ReceiveJSON(dataPacket)
-        aiInput.Text = ""
+        cliAiInput.Text = ""
     end
 end)
 
-bloxInput.FocusLost:Connect(function(enter)
-    if enter and bloxInput.Text ~= "" then
+cliBloxInput.FocusLost:Connect(function(enter)
+    if enter and cliBloxInput.Text ~= "" then
         local dataPacket = HttpService:JSONEncode({
             type = "search",
-            data = bloxInput.Text
+            data = cliBloxInput.Text
         })
         systemAPI.ReceiveJSON(dataPacket)
     end
 end)
 
--- --- UI VISUAL CONTROLLERS ---
-local activePanel = "CMD"
-local function setPanel(name)
-    activePanel = name
-    cmdPanel.Visible = (name == "CMD")
-    terminPanel.Visible = (name == "Termin")
-    bloxPanel.Visible = (name == "ScriptBlox")
+-- Sidebar visuals routers
+local function setSidebarTab(name)
+    cliCmdPanel.Visible = (name == "CMD")
+    cliAiPanel.Visible = (name == "Termin")
+    cliBloxPanel.Visible = (name == "ScriptBlox")
 end
-
-cmdPanelBtn.MouseButton1Click:Connect(function() setPanel("CMD") end)
-terminPanelBtn.MouseButton1Click:Connect(function() setPanel("Termin") end)
-bloxPanelBtn.MouseButton1Click:Connect(function() setPanel("ScriptBlox") end)
-
-closeBtn.MouseButton1Click:Connect(function() mainGui:Destroy() end)
+cmdBtn.MouseButton1Click:Connect(function() setSidebarTab("CMD") end)
+aiBtn.MouseButton1Click:Connect(function() setSidebarTab("Termin") end)
+bloxBtn.MouseButton1Click:Connect(function() setSidebarTab("ScriptBlox") end)
