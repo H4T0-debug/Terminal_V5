@@ -55,18 +55,10 @@ defInputLine.Size = UDim2.new(1, -20, 0, 30)
 defInputLine.Position = UDim2.new(0, 10, 1, -40)
 defInputLine.BackgroundTransparency = 1
 
-local defPrefix = Instance.new("TextLabel", defInputLine)
-defPrefix.Size = UDim2.new(0, 140, 1, 0)
-defPrefix.BackgroundTransparency = 1
-defPrefix.Text = "Enter command: "
-defPrefix.TextColor3 = Color3.fromRGB(255, 255, 255)
-defPrefix.TextSize = 16
-defPrefix.Font = Enum.Font.Code
-defPrefix.TextXAlignment = Enum.TextXAlignment.Left
-
+-- Prefix label removed to keep only the blinking cursor in the typing bar
 local defTextBox = Instance.new("TextBox", defInputLine)
-defTextBox.Size = UDim2.new(1, -150, 1, 0)
-defTextBox.Position = UDim2.new(0, 140, 0, 0)
+defTextBox.Size = UDim2.new(1, 0, 1, 0)
+defTextBox.Position = UDim2.new(0, 0, 0, 0)
 defTextBox.BackgroundTransparency = 1
 defTextBox.Text = ""
 defTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -314,39 +306,75 @@ cliBloxInput.Position = UDim2.new(0, 5, 0, 0)
 cliBloxInput.BackgroundTransparency = 1
 cliBloxInput.TextColor3 = Color3.new(1, 1, 1)
 
--- --- T-TOGGLE PERSISTENT HUD BUTTON ---
-local toggleCircle = Instance.new("TextButton", mainGui)
-toggleCircle.Name = "ToggleCircle"
-toggleCircle.Size = UDim2.new(0, 45, 0, 40)
-toggleCircle.Position = UDim2.new(0.5, -22, 0, 10)
-toggleCircle.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-toggleCircle.BackgroundTransparency = 0.5
-toggleCircle.Text = "T"
-toggleCircle.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleCircle.TextSize = 22
-toggleCircle.Font = Enum.Font.SourceSans
-toggleCircle.Visible = false
-Instance.new("UICorner", toggleCircle).CornerRadius = UDim.new(1, 0)
+-- --- T-TOGGLE PERSISTENT HUD BUTTON (SQUARE SHAPE & TOP RIGHT CORNER) ---
+local toggleSquare = Instance.new("TextButton", mainGui)
+toggleSquare.Name = "ToggleSquare"
+toggleSquare.Size = UDim2.new(0, 35, 0, 35)
+toggleSquare.Position = UDim2.new(1, -45, 0, 10) -- Top-right corner
+toggleSquare.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+toggleSquare.BackgroundTransparency = 0.5
+toggleSquare.Text = "T"
+toggleSquare.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleSquare.TextSize = 18
+toggleSquare.Font = Enum.Font.SourceSansBold
+toggleSquare.Visible = false
+-- Removed UICorner completely to make it a perfect square shape
+
+-- Custom Drag Handler for Square Toggle
+local dragging = false
+local dragInput
+local dragStart
+local startPos
+local moved = false
+
+toggleSquare.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        moved = false
+        dragStart = input.Position
+        startPos = toggleSquare.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+                if not moved then
+                    toggleSquare.Visible = false
+                    if _G.CurrentUITheme == "cli" then
+                        cliUI.Visible = true
+                    else
+                        defaultUI.Visible = true
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+toggleSquare.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        if delta.Magnitude > 5 then
+            moved = true
+        end
+        toggleSquare.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
 
 -- Core hide handler
 local function hideAll()
     defaultUI.Visible = false
     cliUI.Visible = false
-    toggleCircle.Visible = true
-end
-
-local function showActive()
-    toggleCircle.Visible = false
-    if _G.CurrentUITheme == "CLI" then
-        cliUI.Visible = true
-    else
-        defaultUI.Visible = true
-    end
+    toggleSquare.Visible = true
 end
 
 cliClose.MouseButton1Click:Connect(hideAll)
 defClose.MouseButton1Click:Connect(hideAll)
-toggleCircle.MouseButton1Click:Connect(showActive)
 
 -- Theme visual routers
 _G.CurrentUITheme = "default"
@@ -391,9 +419,6 @@ local systemAPI = CoreSystem.Init({
     
     -- Binding Callback API for Fullscreen Render Routing
     DefaultLog = printDefaultLine,
-    SetInputPrefix = function(newPrefix)
-        defPrefix.Text = newPrefix
-    end,
     SetUITheme = swapUITheme
 })
 
@@ -402,11 +427,38 @@ local function triggerInitialization()
     printDefaultLine("Terminal V5.0", Color3.fromRGB(0, 160, 255))
     task.wait(0.3)
     printDefaultLine("Initializing modules...", Color3.fromRGB(0, 160, 255))
-    task.wait(1.0) -- Emulating load sequence asynchronously
+    task.wait(0.8) -- Emulating load sequence asynchronously
     
     if systemAPI then
         printDefaultLine("Initialization successful.", Color3.fromRGB(0, 160, 255))
+        task.wait(0.4)
+        
+        -- SCANNING FOR BACKUPS LOCALLY
+        printDefaultLine("Scanning local filesystem backups...", Color3.fromRGB(0, 160, 255))
         task.wait(0.5)
+        local backupsFound = {}
+        local backupMappings = {
+            "Hiru_Hub.lua", "QuantumOnyx_Project.lua", "Ringta_Scripts_(Patched).lua",
+            "Redz_Hub_(Beta).lua", "Zee_Hub.lua", "Dex_Explorer.lua", "ThanHub.lua",
+            "NatHub.lua", "H4X_Hub.lua", "Infinite_Yield_FE.lua", "Gravity_Hub.lua",
+            "Terminal_V5.0.lua", "FoxName.lua", "Ringta_Hub_V2.lua", "Vape_Voidware.lua",
+            "script_library_backup.lua"
+        }
+        for _, file in ipairs(backupMappings) do
+            if isfile and isfile(file) then
+                table.insert(backupsFound, file)
+            end
+        end
+        if #backupsFound > 0 then
+            printDefaultLine("Found (" .. tostring(#backupsFound) .. ") local script backups:", Color3.fromRGB(0, 160, 255))
+            for _, backup in ipairs(backupsFound) do
+                printDefaultLine(" - " .. backup, Color3.fromRGB(0, 160, 255))
+            end
+        else
+            printDefaultLine("No local script backups detected.", Color3.fromRGB(0, 160, 255))
+        end
+        task.wait(0.4)
+
         printDefaultLine("Fetching game data...", Color3.fromRGB(0, 160, 255))
         task.wait(0.8)
         
@@ -442,8 +494,9 @@ task.spawn(triggerInitialization)
 defTextBox.FocusLost:Connect(function(enter)
     if enter and defTextBox.Text ~= "" then
         local text = defTextBox.Text
-        printDefaultLine("Enter command: " .. text, Color3.fromRGB(255, 255, 255))
         
+        -- Forward straight to server without pre-rendering on screen.
+        -- CmdProcessor will handle printing the properly formatted echo line (e.g. Enter command: text) dynamically.
         local dataPacket = HttpService:JSONEncode({
             type = "command",
             data = text,
