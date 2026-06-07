@@ -34,7 +34,7 @@ local states = {
     waitingForPas = false,
     chatMode = false,
     aimbot = false, 
-    aiActive = false, -- Dynamic AI Interaction Intercept State
+    aiActive = false, 
     lastSafePos = SHIELD_CENTER_CF,
     lastAiCode = "",
     lastScrapedData = "No game data captured yet."
@@ -60,13 +60,17 @@ local LibraryMappings = {
 }
 
 local loadedLibrary = nil 
-local lastScriptBloxResults = {} -- Caches last scriptblox search results
+local lastScriptBloxResults = {} 
 local connections = {}
 local shieldInstance = nil
 local commandCount = 0
 
+local activeThinkingLabel = nil -- Holds the live TextLabel object for default UI sweep
+
 -- Smart Multi-Theme Console Log Router
 local function sysLog(text, isSystem, isError, colorOverride)
+    local createdLabel = nil
+    
     if uiRef.OutputLabel then
         local color = isError and "rgb(255, 100, 100)" or (isSystem and "rgb(0, 255, 255)" or "rgb(0, 255, 0)")
         uiRef.OutputLabel.Text = uiRef.OutputLabel.Text .. string.format("\n<font color='%s'>%s%s</font>", color, isSystem and "[SYSTEM] " or "", text)
@@ -76,8 +80,10 @@ local function sysLog(text, isSystem, isError, colorOverride)
     
     if uiRef.DefaultLog then
         local color = colorOverride or (isError and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(0, 160, 255))
-        uiRef.DefaultLog(text, color)
+        createdLabel = uiRef.DefaultLog(text, color)
     end
+    
+    return createdLabel
 end
 
 local function getPlayer(name)
@@ -243,7 +249,14 @@ function API.AskAI(message, silentActivateGreeting)
         end
     end
 
-	sysLog("<i>Thinking...</i>", true, false, Color3.fromRGB(200, 200, 255))
+    -- Save reference of created Thinking label to destroy it when answer is loaded
+    if uiRef.DefaultLog then
+        activeThinkingLabel = uiRef.DefaultLog("Thinking...", Color3.fromRGB(200, 200, 255))
+    end
+    if uiRef.OutputLabel then
+        uiRef.OutputLabel.Text = uiRef.OutputLabel.Text .. "\n<font color='rgb(200, 200, 255)'>[SYSTEM] <i>Thinking...</i></font>"
+        uiRef.CmdScroll.CanvasPosition = Vector2.new(0, 99999)
+    end
 
 	task.spawn(function()
 		local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
@@ -302,12 +315,18 @@ function API.AskAI(message, silentActivateGreeting)
                     local foundCode = extractCode(reply)
                     if foundCode then states.lastAiCode = foundCode end
                     
-                    -- Remove Thinking status
+                    -- CLEANING DUSTY "Thinking..." LABELS FROM SCREEN BEFORE PRINTING REPLY
+                    if activeThinkingLabel then
+                        pcall(function() activeThinkingLabel:Destroy() end)
+                        activeThinkingLabel = nil
+                    end
                     if uiRef.OutputLabel then
-                        local matchIndex = uiRef.OutputLabel.Text:find("\n<font color='rgb%(200, 200, 255%)'>%[SYSTEM%] <i>Thinking.*</i></font>") or uiRef.OutputLabel.Text:find("<i>Thinking.*</i>")
-                        if matchIndex then
-                            uiRef.OutputLabel.Text = uiRef.OutputLabel.Text:sub(1, matchIndex - 1)
-                        end
+                        pcall(function()
+                            local text = uiRef.OutputLabel.Text
+                            local cleaned, count = text:gsub("\n<font color='rgb%(200, 200, 255%)'>%[SYSTEM%] <i>Thinking%.%.%.</i></font>", "")
+                            if count == 0 then cleaned = text:gsub("<i>Thinking%.%.%.</i>", "") end
+                            uiRef.OutputLabel.Text = cleaned
+                        end)
                     end
                     
                     sysLog("<b>[Termin AI]:</b> " .. reply, true, false, Color3.fromRGB(200, 200, 255))
@@ -317,7 +336,8 @@ function API.AskAI(message, silentActivateGreeting)
                     if executeTrigger then
                         task.wait(0.5)
                         sysLog("AI Autopilot: Executing corrected command: '" .. executeTrigger .. "'", true)
-                        API.ExecuteCommand(executeTrigger)
+                        -- FIX: Pass true as second argument to bypass AI Interception loop
+                        API.ExecuteCommand(executeTrigger, true)
                     end
                     
                     local execCodeTrigger = reply:match("%[EXEC_CODE%]:%s*true")
@@ -332,7 +352,6 @@ function API.AskAI(message, silentActivateGreeting)
 end
 
 function API.SearchScriptBlox(query)
-    -- Reset cached search registry
     lastScriptBloxResults = {}
     
     local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
@@ -349,7 +368,6 @@ function API.SearchScriptBlox(query)
             if data and data.result and data.result.scripts then
                 sysLog("====== SCRIPTBLOX RESULTS ======", true)
                 for i, s in ipairs(data.result.scripts) do
-                    -- Cache returned result so user can type run package [index]
                     lastScriptBloxResults[i] = s.script
                     sysLog(tostring(i) .. ". " .. s.title, false)
                 end
@@ -363,7 +381,7 @@ function API.SearchScriptBlox(query)
     end)
 end
 
-function API.ExecuteCommand(rawInput)
+function API.ExecuteCommand(rawInput, bypassAI)
     local originalRaw = rawInput:gsub("^%s+", ""):gsub("%s+$", "")
     if originalRaw == "" then return end
 
@@ -385,8 +403,8 @@ function API.ExecuteCommand(rawInput)
     end
     commandCount = commandCount + 1
 
-    -- Check if AI is active and intercept all commands (except deactivation)
-    if states.aiActive and raw ~= "close termin ai" then
+    -- Check if AI is active and intercept all commands (except deactivation and bypassed autopilot runs)
+    if states.aiActive and not bypassAI and raw ~= "close termin ai" then
         API.AskAI(originalRaw)
         return
     end
@@ -400,7 +418,7 @@ function API.ExecuteCommand(rawInput)
         found = true
         states.aiActive = true
         sysLog("Termin AI Active. Auto-correcting and executing system autopilot activated.", true)
-        API.AskAI("", true) -- Trigger silent initial greeting
+        API.AskAI("", true) 
         
     elseif raw == "close termin ai" then
         found = true
