@@ -1,0 +1,68 @@
+local HttpService = game:GetService("HttpService")
+
+local AiMemory = {
+    Memory = {},   -- Storage limit: 100 slots (for scraped telemetry, positions, logs)
+    Scripts = {}   -- Storage limit: 5 slots (for runnable scripts written by Termin AI)
+}
+
+-- Write value to memory (Enforces the 100-slot cap)
+function AiMemory.WriteMemory(key, value)
+    local count = 0
+    for _ in pairs(AiMemory.Memory) do count = count + 1 end
+    
+    if count >= 100 and not AiMemory.Memory[key] then
+        -- Evict oldest memory slot to preserve buffer space
+        local oldestKey = nil
+        for k, _ in pairs(AiMemory.Memory) do
+            oldestKey = k
+            break
+        end
+        if oldestKey then AiMemory.Memory[oldestKey] = nil end
+    end
+    
+    AiMemory.Memory[key] = value
+    return true
+end
+
+-- Read value from memory
+function AiMemory.ReadMemory(key)
+    return AiMemory.Memory[key]
+end
+
+-- Clear all memory logs
+function AiMemory.ClearMemory()
+    table.clear(AiMemory.Memory)
+end
+
+-- Write executable code into script slots 1-5
+function AiMemory.WriteScript(slot, code)
+    local slotNum = tonumber(slot)
+    if slotNum and slotNum >= 1 and slotNum <= 5 then
+        AiMemory.Scripts[slotNum] = code
+        return true
+    end
+    return false, "Invalid slot index. Scripts can only be written to slots 1 through 5."
+end
+
+-- Retrieve compiled script slot
+function AiMemory.GetScript(slot)
+    local slotNum = tonumber(slot)
+    return AiMemory.Scripts[slotNum]
+end
+
+-- Execute script stored in memory slot silently
+function AiMemory.ExecuteScriptSlot(slot)
+    local code = AiMemory.GetScript(slot)
+    if code then
+        local success, func = pcall(loadstring(code))
+        if success and func then
+            task.spawn(func)
+            return true
+        else
+            return false, "Compilation failed: " .. tostring(func)
+        end
+    end
+    return false, "Script slot is empty."
+end
+
+return AiMemory
