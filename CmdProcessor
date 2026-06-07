@@ -58,17 +58,26 @@ local LibraryMappings = {
     [15] = "Vape_Voidware.lua"
 }
 
-local loadedLibrary = nil -- Stores the library data once downloaded
+local loadedLibrary = nil 
 local connections = {}
 local shieldInstance = nil
 
--- --- UTILITY METHODS ---
-local function printMsg(msg, isSystem, isError)
-    if not uiRef.OutputLabel then return end
-    local color = isError and "rgb(255, 100, 100)" or (isSystem and "rgb(0, 255, 255)" or "rgb(0, 255, 0)")
-    uiRef.OutputLabel.Text = uiRef.OutputLabel.Text .. string.format("\n<font color='%s'>%s%s</font>", color, isSystem and "[SYSTEM] " or "", msg)
-    task.wait(0.05)
-    uiRef.CmdScroll.CanvasPosition = Vector2.new(0, 99999)
+-- Smart Multi-Theme Console Log Router
+local firstDefaultCommand = true
+local function sysLog(text, isSystem, isError)
+    -- Log to CLI Theme Console if reference active
+    if uiRef.OutputLabel then
+        local color = isError and "rgb(255, 100, 100)" or (isSystem and "rgb(0, 255, 255)" or "rgb(0, 255, 0)")
+        uiRef.OutputLabel.Text = uiRef.OutputLabel.Text .. string.format("\n<font color='%s'>%s%s</font>", color, isSystem and "[SYSTEM] " or "", text)
+        task.wait(0.05)
+        uiRef.CmdScroll.CanvasPosition = Vector2.new(0, 99999)
+    end
+    
+    -- Log to Fullscreen Default Theme Console if reference active
+    if uiRef.DefaultLog then
+        local color = isError and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(0, 160, 255)
+        uiRef.DefaultLog(text, color)
+    end
 end
 
 local function getPlayer(name)
@@ -146,8 +155,8 @@ local function createShield()
         local function setup(obj) if obj:IsA("BasePart") then obj.CanCollide = false; obj.CanQuery = false; obj.Anchored = true end end
         if shieldInstance:IsA("BasePart") then shieldInstance.CFrame = CFrame.new(CENTER_POS); setup(shieldInstance)
         elseif shieldInstance:IsA("Model") then shieldInstance:PivotTo(CFrame.new(CENTER_POS)); for _, p in pairs(shieldInstance:GetDescendants()) do setup(p) end end
-        printMsg("Control Area shield deployed.", true)
-    else printMsg("Error: Shield load failed.", false, true) end
+        sysLog("Control Area shield deployed.", true)
+    else sysLog("Error: Shield load failed.", false, true) end
 end
 
 -- --- AIMBOT TARGET ACQUISITION ---
@@ -322,16 +331,44 @@ function API.ExecuteCommand(rawInput)
 
     if LoadstringConverter then
         local wasHandled, errorResult = pcall(function()
-            return LoadstringConverter.CleanAndExecute(originalRaw, printMsg)
+            return LoadstringConverter.CleanAndExecute(originalRaw, sysLog)
         end)
         if wasHandled and errorResult then return end
     end
 
     local raw = originalRaw:lower()
-    printMsg("$ " .. raw, false)
+    
+    -- In CLI mode print input echoing, default mode handles it client side
+    if _G.CurrentUITheme == "cli" then
+        sysLog("$ " .. raw, false)
+    end
+    
     local found = false
     
     if raw == "control area" then found = true; createShield()
+    
+    -- --- DYNAMIC THEME SYSTEM TOGGLES ---
+    elseif raw == "change ui(cli)" then
+        found = true
+        if uiRef.SetUITheme then
+            uiRef.SetUITheme("CLI")
+            sysLog("UI theme swapped to Premium CLI.", true)
+        end
+        
+    elseif raw == "change ui(default)" then
+        found = true
+        if uiRef.SetUITheme then
+            uiRef.SetUITheme("Default")
+            sysLog("UI theme swapped to Immersive Fullscreen Default.", true)
+        end
+        
+    elseif raw == "destroy()" then
+        found = true
+        sysLog("De-initializing resources and wiping console instances.", true)
+        task.wait(0.5)
+        if uiRef.GuiInstance then
+            uiRef.GuiInstance:Destroy()
+        end
     
     -- --- SAVE FILE FEATURES ---
     elseif raw:match('^save package%("([%w_]+)"%)') then
@@ -339,7 +376,7 @@ function API.ExecuteCommand(rawInput)
         local pkgName = originalRaw:match('save package%("([%w_]+)"%)')
         if pkgName == "scriptLibrary" then
             if loadedLibrary and loadedLibrary.Catalog then
-                printMsg("Serializing catalog. Saving to your executor workspace...", true)
+                sysLog("Serializing catalog. Saving to your executor workspace...", true)
                 task.spawn(function()
                     local success, err = pcall(function()
                         if writefile then
@@ -350,16 +387,16 @@ function API.ExecuteCommand(rawInput)
                         end
                     end)
                     if success then
-                        printMsg("SUCCESS: Saved backup as 'script_library_backup.lua'!", true)
+                        sysLog("SUCCESS: Saved backup as 'script_library_backup.lua'!", true)
                     else
-                        printMsg("Backup failed: " .. tostring(err), false, true)
+                        sysLog("Backup failed: " .. tostring(err), false, true)
                     end
                 end)
             else
-                printMsg("Error: load scriptLibrary package first using 'get package(\"scriptLibrary\")'.", false, true)
+                sysLog("Error: load scriptLibrary package first using 'get package(\"scriptLibrary\")'.", false, true)
             end
         else
-            printMsg("Package '" .. pkgName .. "' is not recognized for system-save.", false, true)
+            sysLog("Package '" .. pkgName .. "' is not recognized for system-save.", false, true)
         end
 
     -- Save single script using precise static filenames
@@ -368,26 +405,25 @@ function API.ExecuteCommand(rawInput)
         local idx = tonumber(raw:match("^save package (%d+)$"))
         if loadedLibrary and loadedLibrary.Catalog and loadedLibrary.Catalog[idx] then
             local scriptItem = loadedLibrary.Catalog[idx]
-            printMsg("Compiling standalone save for: " .. scriptItem.Name, true)
+            sysLog("Compiling standalone save for: " .. scriptItem.Name, true)
             task.spawn(function()
                 local success, err = pcall(function()
                     if writefile then
                         local codeToWrite = scriptItem.RawCode or "-- No execution strings registered."
-                        -- Guarantee exact filename mapping matches LibraryMappings index
                         local safeName = LibraryMappings[idx] or (scriptItem.Name:gsub("%s+", "_") .. ".lua")
                         
                         writefile(safeName, codeToWrite)
-                        printMsg("SUCCESS: Standalone saved as '" .. safeName .. "'!", true)
+                        sysLog("SUCCESS: Standalone saved as '" .. safeName .. "'!", true)
                     else
                         error("Executor does not support writefile API")
                     end
                 end)
                 if not success then
-                    printMsg("Failed standalone save: " .. tostring(err), false, true)
+                    sysLog("Failed standalone save: " .. tostring(err), false, true)
                 end
             end)
         else
-            printMsg("Error: Invalid index or scriptLibrary package is not loaded yet.", false, true)
+            sysLog("Error: Invalid index or scriptLibrary package is not loaded yet.", false, true)
         end
 
     -- --- DYNAMIC PACKAGE LIBRARY LOADING ---
@@ -396,7 +432,7 @@ function API.ExecuteCommand(rawInput)
         local pkgName = originalRaw:match('get package%("([%w_]+)"%)')
         
         if pkgName == "scriptLibrary" then
-            printMsg("Fetching package 'scriptLibrary' from database...", true)
+            sysLog("Fetching package 'scriptLibrary' from database...", true)
             task.spawn(function()
                 local success, lib = pcall(function()
                     return loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/scriptLibrary"))()
@@ -404,18 +440,18 @@ function API.ExecuteCommand(rawInput)
                 
                 if success and lib and lib.Catalog then
                     loadedLibrary = lib
-                    printMsg("Package loaded! Database catalogs decoded successfully.", true)
-                    printMsg("====== AVAILABLE SCRIPTS ======", true)
+                    sysLog("Package loaded! Database catalogs decoded successfully.", true)
+                    sysLog("====== AVAILABLE SCRIPTS ======", true)
                     for i, item in ipairs(lib.Catalog) do
-                        printMsg(string.format("[%d] %s [%s]", i, item.Name, item.Game:upper()), false)
+                        sysLog(string.format("[%d] %s [%s]", i, item.Name, item.Game:upper()), false)
                     end
-                    printMsg("Type 'run package [Number]' to execute.", true)
+                    sysLog("Type 'run package [Number]' to execute.", true)
                 else
-                    printMsg("Failed to mount scriptLibrary package.", false, true)
+                    sysLog("Failed to mount scriptLibrary package.", false, true)
                 end
             end)
         else
-            printMsg("Package '" .. pkgName .. "' not found in global registers.", false, true)
+            sysLog("Package '" .. pkgName .. "' not found in global registers.", false, true)
         end
         
     -- Run specific script index (Scans local workspace backups FIRST)
@@ -426,7 +462,7 @@ function API.ExecuteCommand(rawInput)
         
         -- CHECK EXECUTOR DIRECTORY FOR AN OFFLINE BACKUP FIRST
         if localFileName and isfile and isfile(localFileName) then
-            printMsg("Offline local backup detected: '" .. localFileName .. "'. Loading...", true)
+            sysLog("Offline local backup detected: '" .. localFileName .. "'. Loading...", true)
             task.spawn(function()
                 local success, content = pcall(function() return readfile(localFileName) end)
                 if success and content then
@@ -434,40 +470,40 @@ function API.ExecuteCommand(rawInput)
                         loadstring(content)()
                     end)
                     if runSuccess then
-                        printMsg("Successfully loaded local standalone script!", true)
+                        sysLog("Successfully loaded local standalone script!", true)
                     else
-                        printMsg("Execution Error: " .. tostring(err), false, true)
+                        sysLog("Execution Error: " .. tostring(err), false, true)
                     end
                 else
-                    printMsg("Failed to read local standalone file.", false, true)
+                    sysLog("Failed to read local standalone file.", false, true)
                 end
             end)
             
         -- FALLBACK TO ONLINE CATALOG ONLY IF NO LOCAL BACKUP FILE EXISTS
         elseif loadedLibrary and loadedLibrary.Catalog and loadedLibrary.Catalog[idx] then
             local scriptItem = loadedLibrary.Catalog[idx]
-            printMsg("Compiling & mounting from remote catalog: " .. scriptItem.Name, true)
+            sysLog("Compiling & mounting from remote catalog: " .. scriptItem.Name, true)
             task.spawn(function()
                 local success, err = pcall(scriptItem.Execute)
                 if success then
-                    printMsg("Successfully loaded execution routine.", true)
+                    sysLog("Successfully loaded execution routine.", true)
                 else
-                    printMsg("Execution Error: " .. tostring(err), false, true)
+                    sysLog("Execution Error: " .. tostring(err), false, true)
                 end
             end)
         else
             if localFileName then
-                printMsg("Error: Local backup '" .. localFileName .. "' not found. Type 'get package(\"scriptLibrary\")' to fetch catalogs from GitHub.", false, true)
+                sysLog("Error: Local backup '" .. localFileName .. "' not found. Type 'get package(\"scriptLibrary\")' to fetch catalogs from GitHub.", false, true)
             else
-                printMsg("Error: Invalid package index.", false, true)
+                sysLog("Error: Invalid package index.", false, true)
             end
         end
         
     -- --- NEW AIMBOT COMMANDS ---
     elseif raw == "enable aimbot" then
-        found = true; states.aimbot = true; printMsg("Silent humanized aimbot initialized.", true)
+        found = true; states.aimbot = true; sysLog("Silent humanized aimbot initialized.", true)
     elseif raw == "disable aimbot" then
-        found = true; states.aimbot = false; printMsg("Aimbot deactivated.", true)
+        found = true; states.aimbot = false; sysLog("Aimbot deactivated.", true)
     
     elseif raw:sub(1,11) == "change rgb " then
         found = true
@@ -497,30 +533,30 @@ function API.ExecuteCommand(rawInput)
                     ColorSequenceKeypoint.new(0.75, c2),
                     ColorSequenceKeypoint.new(1.00, c1)
                 })
-                printMsg("RGB LED configuration updated to: " .. color1Name .. " and " .. color2Name, true)
+                sysLog("RGB LED configuration updated to: " .. color1Name .. " and " .. color2Name, true)
             else
                 local errMsg = response and response.error or "Unknown resolution error"
-                printMsg("Error: " .. errMsg, false, true)
+                sysLog("Error: " .. errMsg, false, true)
             end
         else
-            printMsg("Syntax Error: Use 'change rgb color1,color2'", false, true)
+            sysLog("Syntax Error: Use 'change rgb color1,color2'", false, true)
         end
         
     elseif raw == "start data index" then
         found = true; print(player.DisplayName .. ":UTF-70:freemium")
-        printMsg("Data Indexing: ACTIVATED (Signal Sent)", true)
+        sysLog("Data Indexing: ACTIVATED (Signal Sent)", true)
     elseif raw == "stop data index" then
         found = true; print(player.DisplayName .. ":UTF-71:free")
-        printMsg("Data Indexing: DEACTIVATED (Signal Sent)", true)
+        sysLog("Data Indexing: DEACTIVATED (Signal Sent)", true)
     elseif raw == "protocol 2" then
-        found = true; printMsg("Protocol 2: EVASION SEQUENCE START.", true)
+        found = true; sysLog("Protocol 2: EVASION SEQUENCE START.", true)
         task.spawn(function()
             task.wait(0.5); workspace.FallenPartsDestroyHeight = -100000
             if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
                 local oldCF = player.Character.HumanoidRootPart.CFrame
                 player.Character.HumanoidRootPart.CFrame = CFrame.new(oldCF.X, -10000, oldCF.Z)
                 task.wait(10); player.Character.HumanoidRootPart.CFrame = SHIELD_CENTER_CF
-                printMsg("Protocol 2: Returned to HQ.", true)
+                sysLog("Protocol 2: Returned to HQ.", true)
             end
         end)
     elseif raw == "enable chat mode" then
@@ -529,17 +565,17 @@ function API.ExecuteCommand(rawInput)
         connections.chatListener = player.Chated or player.Chatted:Connect(function(msg)
             if states.chatMode and msg:sub(1,1) == "$" then API.ExecuteCommand(msg:sub(2)) end
         end)
-        printMsg("Chat Mode: ENABLED. Use '$' in game chat.", true)
+        sysLog("Chat Mode: ENABLED. Use '$' in game chat.", true)
     elseif raw == "disable chat mode" then
-        found = true; states.chatMode = false; if connections.chatListener then connections.chatListener:Disconnect() end; printMsg("Chat Mode: DISABLED.", true)
+        found = true; states.chatMode = false; if connections.chatListener then connections.chatListener:Disconnect() end; sysLog("Chat Mode: DISABLED.", true)
     elseif raw == "tp mn" then
-        found = true; states.waitingForMn = true; printMsg("Waiting for Flowing Water (Console Move)...", true)
+        found = true; states.waitingForMn = true; sysLog("Waiting for Flowing Water (Console Move)...", true)
     elseif raw == "tp pas" then
-        found = true; states.waitingForPas = true; printMsg("Waiting for Flowing Water (Console Move) for PAS...", true)
+        found = true; states.waitingForPas = true; sysLog("Waiting for Flowing Water (Console Move) for PAS...", true)
     elseif raw == "protocol 1" then
-        found = true; states.protocol1 = not states.protocol1; printMsg("Protocol 1: " .. (states.protocol1 and "AGGRESSIVE" or "DISABLED"), true)
+        found = true; states.protocol1 = not states.protocol1; sysLog("Protocol 1: " .. (states.protocol1 and "AGGRESSIVE" or "DISABLED"), true)
     elseif raw == "loop fling all" then
-        found = true; states.loopFlinging = true; printMsg("Loop Fling All: ACTIVATED", true)
+        found = true; states.loopFlinging = true; sysLog("Loop Fling All: ACTIVATED", true)
         task.spawn(function()
             while states.loopFlinging do
                 for _, target in pairs(Players:GetPlayers()) do
@@ -565,21 +601,21 @@ function API.ExecuteCommand(rawInput)
             end
         end)
     elseif raw == "stop" then
-        found = true; states.loopFlinging = false; states.protocol1 = false; states.waitingForMn = false; states.waitingForPas = false; states.aimbot = false; printMsg("All processes terminated.", true)
+        found = true; states.loopFlinging = false; states.protocol1 = false; states.waitingForMn = false; states.waitingForPas = false; states.aimbot = false; sysLog("All processes terminated.", true)
     elseif raw == "tp as" then
-        found = true; printMsg("Searching for Atoms Domain...", true)
+        found = true; sysLog("Searching for Atoms Domain...", true)
         local target = findObjectDeep(DOMAIN_AS)
         if target then
             player.Character:SetPrimaryPartCFrame(target:GetPivot() * CFrame.new(0, 5, 0))
-            printMsg("Domain 'Atoms' reached.", true)
-        else printMsg("Error: Atoms not found.", false, true) end
+            sysLog("Domain 'Atoms' reached.", true)
+        else sysLog("Error: Atoms not found.", false, true) end
     elseif raw == "tp cr" then
-        found = true; printMsg("Searching for Cutscene Domain...", true)
+        found = true; sysLog("Searching for Cutscene Domain...", true)
         local target = findObjectDeep(DOMAIN_CR)
         if target then
             player.Character:SetPrimaryPartCFrame(target:GetPivot() * CFrame.new(0, 5, 0))
-            printMsg("Domain 'Death Cutscene' reached.", true)
-        else printMsg("Error: Cutscene not found.", false, true) end
+            sysLog("Domain 'Death Cutscene' reached.", true)
+        else sysLog("Error: Cutscene not found.", false, true) end
     elseif raw == "enable fling aura" then
         found = true; states.flingAura = true
         if connections.aura then connections.aura:Disconnect() end
@@ -599,15 +635,15 @@ function API.ExecuteCommand(rawInput)
                 end
             end
         end)
-        printMsg("Fling Aura Active (50k Power)", true)
+        sysLog("Fling Aura Active (50k Power)", true)
     elseif raw == "disable fling aura" then
-        found = true; states.flingAura = false; if connections.aura then connections.aura:Disconnect() end; printMsg("Fling Aura Disabled.", true)
+        found = true; states.flingAura = false; if connections.aura then connections.aura:Disconnect() end; sysLog("Fling Aura Disabled.", true)
     elseif raw:sub(1,6) == "fling " then
         found = true; local cmdStr = raw:sub(7); local tName, hits
         if cmdStr:find(":") then local split = cmdStr:split(":") tName = split[1] hits = tonumber(split[2]) or 10 else tName = cmdStr hits = 10 end
         local target = getPlayer(tName)
         if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-            printMsg("Flinging " .. target.DisplayName, true)
+            sysLog("Flinging " .. target.DisplayName, true)
             task.spawn(function()
                 states.flinging = true
                 local hum = player.Character:FindFirstChildOfClass("Humanoid")
@@ -629,9 +665,9 @@ function API.ExecuteCommand(rawInput)
         end
     elseif raw:sub(1,9) == "trashcan " then
         found = true; local target = getPlayer(raw:sub(10))
-        if target then states.trashTarget = target; states.trashLooping = true; printMsg("Trash Target: " .. target.DisplayName, true); local t = getNearestTrashcan(); if t then player.Character.HumanoidRootPart.CFrame = t.CFrame * CFrame.new(3,0,0) end end
+        if target then states.trashTarget = target; states.trashLooping = true; sysLog("Trash Target: " .. target.DisplayName, true); local t = getNearestTrashcan(); if t then player.Character.HumanoidRootPart.CFrame = t.CFrame * CFrame.new(3,0,0) end end
     elseif raw == "stop trashcan" then
-        found = true; states.trashLooping = false; states.isAttached = false; printMsg("Trash Loop Halted.", true)
+        found = true; states.trashLooping = false; states.isAttached = false; sysLog("Trash Loop Halted.", true)
     elseif raw == "enable antifling" then
         found = true; states.antifling = true
         if connections.safePosTracker then connections.safePosTracker:Disconnect() end
@@ -647,29 +683,36 @@ function API.ExecuteCommand(rawInput)
             if hrp and states.antifling then
                 if hrp.Position.Y >= 1000 then
                     local returnTarget = states.lastSafePos 
-                    printMsg("Fling Detected! Quarantining at MN for 10s.", true)
+                    sysLog("Fling Detected! Quarantining at MN for 10s.", true)
                     hrp.CFrame = MN_CF; hrp.Anchored = true
                     task.delay(10, function() 
                         hrp.Anchored = false; hrp.CFrame = returnTarget
-                        printMsg("Sequence Complete: Returned to safety.", true)
+                        sysLog("Sequence Complete: Returned to safety.", true)
                     end)
                 end
             end
         end)
-        printMsg("Smart Anti-Fling Enabled.", true)
+        sysLog("Smart Anti-Fling Enabled.", true)
     elseif raw == "disable antifling" then
         found = true; states.antifling = false; 
         if connections.antifling then connections.antifling:Disconnect() end
         if connections.safePosTracker then connections.safePosTracker:Disconnect() end
-        printMsg("Anti-Fling Disabled.", true)
+        sysLog("Anti-Fling Disabled.", true)
     elseif raw == "enable esp" then
         found = true; states.esp = true
         task.spawn(function() while states.esp do for _, p in pairs(Players:GetPlayers()) do if p ~= player and p.Character and not p.Character:FindFirstChild("TerminalESP") then local h = Instance.new("Highlight", p.Character) h.Name = "TerminalESP" h.FillColor = Color3.new(0, 1, 1) end end task.wait(1) end end)
-        printMsg("ESP Enabled.", true)
+        sysLog("ESP Enabled.", true)
     elseif raw == "clear" then
         found = true; uiRef.OutputLabel.Text = "[SYSTEM] Console Cleared."
     end
-    if not found then printMsg("Error: command doesn't exist.", false, true) end
+    
+    -- Prompt interface updating
+    if firstDefaultCommand and _G.CurrentUITheme == "default" then
+        firstDefaultCommand = false
+        if uiRef.SetInputPrefix then uiRef.SetInputPrefix("~ ") end
+    end
+    
+    if not found then sysLog("Error: command doesn't exist.", false, true) end
 end
 
 -- --- SMART JSON DECODER WITH PLAIN TEXT FALLBACK ---
@@ -695,6 +738,16 @@ end
 function CommandProcessor.Init(uidefs)
     uiRef = uidefs
     
+    -- Autoload scriptLibrary package quietly on boot
+    task.spawn(function()
+        local success, lib = pcall(function()
+            return loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/scriptLibrary"))()
+        end)
+        if success and lib and lib.Catalog then
+            loadedLibrary = lib
+        end
+    end)
+
     -- Setup Core Hooks
     task.spawn(function()
         local function setupHook()
@@ -716,13 +769,13 @@ function CommandProcessor.Init(uidefs)
                         if args[1] and args[1].Goal == "Console Move" then
                             if states.waitingForMn then
                                 states.waitingForMn = false
-                                printMsg("Signal detected. Teleporting (MN) in 0.7s...", true)
+                                sysLog("Signal detected. Teleporting (MN) in 0.7s...", true)
                                 task.delay(0.7, function()
                                     if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then player.Character.HumanoidRootPart.CFrame = MN_CF end
                                 end)
                             elseif states.waitingForPas then
                                 states.waitingForPas = false
-                                printMsg("Signal detected. Teleporting (PAS) in 0.7s...", true)
+                                sysLog("Signal detected. Teleporting (PAS) in 0.7s...", true)
                                 task.delay(0.7, function()
                                     if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then player.Character.HumanoidRootPart.CFrame = CFrame.new(1073.91443, 16.4270039 + 5, 22984.873, 1, 0, 0, 0, 1, 0, 0, 0, 1) end
                                 end)
