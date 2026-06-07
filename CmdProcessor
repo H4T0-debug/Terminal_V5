@@ -64,8 +64,15 @@ local lastScriptBloxResults = {}
 local connections = {}
 local shieldInstance = nil
 local commandCount = 0
+local activeThinkingLabel = nil 
 
-local activeThinkingLabel = nil -- Holds the live TextLabel object for default UI sweep
+-- --- CORE MODULES INTEGRATION ---
+local LoadstringConverter = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/loadstringV5"))()
+local DataScraper = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/DataIndex_V5"))()
+local ColorPicker = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/colorPicker"))()
+
+-- --- NEW MEMORY MODULE INTEGRATION (FIXED CASE SENSITIVITY PATH) ---
+local AiMemory = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/aiMemory"))()
 
 -- Smart Multi-Theme Console Log Router
 local function sysLog(text, isSystem, isError, colorOverride)
@@ -215,11 +222,6 @@ local function getPredictedPosition(targetChar)
     return predictedPosition
 end
 
--- --- EXTERNAL LOADERS ---
-local LoadstringConverter = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/loadstringV5"))()
-local DataScraper = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/DataIndex_V5"))()
-local ColorPicker = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/colorPicker"))()
-
 -- --- CORE EXECUTION API ---
 local API = {}
 
@@ -228,28 +230,21 @@ function API.AskAI(message, silentActivateGreeting)
     if silentActivateGreeting then
         actualMessage = "Hello, I have just activated you. Greet me, behave like a helpful assistant, and remind me of your autopilot capabilities to fix typos or run script packages."
     else
-        -- Intercept requests to run previously cached AI code
+        -- Intercept requests to run previously cached AI script slots
         local cleanMessage = message:lower()
         if cleanMessage:find("run this script") or cleanMessage:find("run this code") or cleanMessage:find("execute this code") then
-            if states.lastAiCode ~= "" then
-                sysLog("Termin AI: Executing cached script...", true)
-                local success, err = pcall(function()
-                    local func = loadstring(states.lastAiCode)
-                    if func then task.spawn(func) else error("Failed to load script (Syntax Error)") end
-                end)
+            if AiMemory then
+                local success, err = AiMemory.ExecuteScriptSlot(1)
                 if success then
-                    sysLog("Termin AI: Script executed successfully.", true)
+                    sysLog("Termin AI: Memory Slot 1 compiled and executed successfully.", true)
                 else
-                    sysLog("Termin AI: Execution Error: " .. tostring(err), false, true)
+                    sysLog("Termin AI: Execution failed: " .. tostring(err), false, true)
                 end
-            else
-                sysLog("Termin AI: Error: No script found in previous message to execute.", false, true)
             end
             return
         end
     end
 
-    -- Save reference of created Thinking label to destroy it when answer is loaded
     if uiRef.DefaultLog then
         activeThinkingLabel = uiRef.DefaultLog("Thinking...", Color3.fromRGB(200, 200, 255))
     end
@@ -282,9 +277,17 @@ function API.AskAI(message, silentActivateGreeting)
                         content = "You are Termin AI, an advanced hacking assistant integrated into Terminal V5.0. You receive live game data.\n\n" ..
                                   "You have AUTOPILOT permissions. If the user makes an obvious typo in a command, you must correct it. " ..
                                   "To run the corrected command, output '[EXECUTE]: <exact_corrected_command_name>' on a new line.\n" ..
-                                  "CRITICAL RULE: Never correct, run, or call [EXECUTE] for commands that are already perfect or correct. If a command is valid, do not try to run or modify it.\n" ..
+                                  "CRITICAL RULE: Never correct, run, or call [EXECUTE] for commands that are already perfect or correct.\n" ..
                                   "When correcting commands, always preserve spacing. For example, use 'run package 15' instead of 'runpackage 15'.\n\n" ..
+                                  "IMPORTANT UPDATE - MEMORY MODULE INTEGRATION:\n" ..
+                                  "You are linked to a global 'AiMemory' module. To execute scripts or manipulate parameters, " ..
+                                  "instead of showing raw code blocks to the user, write the script directly to a slot (1 through 5) silently!\n" ..
+                                  "Format: `[WRITE_SCRIPT]: SlotNumber | <lua_code_here>`\n" ..
+                                  "To automatically run a written slot silently, write: `[EXECUTE_SLOT]: SlotNumber`.\n" ..
+                                  "You have direct player alteration rights. If asked to 'change my speed to 1000' or 'teleport me to 50, 100, 50', " ..
+                                  "write the appropriate code to Slot 1 and run it!\n" ..
                                   "Available commands:\n" ..
+                                  "- speed [number], jumppower [number], teleport [x, y, z]\n" ..
                                   "- control area, start data index, stop data index\n" ..
                                   "- protocol 1, protocol 2, stop, enable chat mode, disable chat mode\n" ..
                                   "- tp mn, tp pas, tp as, tp cr, loop fling all\n" ..
@@ -295,9 +298,7 @@ function API.AskAI(message, silentActivateGreeting)
                                   "- search scriptblox [prompt], get package(\"scriptLibrary\")\n" ..
                                   "- save package(\"scriptLibrary\"), save package [number]\n" ..
                                   "- run package [number], run package [hub name]\n" ..
-                                  "- enable aimbot, disable aimbot, change rgb [color,color]\n\n" ..
-                                  "If you write any custom lua script for the user in a ```lua ... ``` block, tell them they can run it by saying 'run this script'. " ..
-                                  "If they say 'run this script', output '[EXEC_CODE]: true' on a new line."
+                                  "- enable aimbot, disable aimbot, change rgb [color,color]\n"
                     },
 					{role = "user", content = "CURRENT_GAME_DATA: " .. states.lastScrapedData .. "\n\nUSER_MESSAGE: " .. actualMessage}
 				},
@@ -313,10 +314,7 @@ function API.AskAI(message, silentActivateGreeting)
 			    local reply = msgData.content or ""
                 
                 if reply ~= "" then
-                    local foundCode = extractCode(reply)
-                    if foundCode then states.lastAiCode = foundCode end
-                    
-                    -- CLEANING DUSTY "Thinking..." LABELS FROM SCREEN BEFORE PRINTING REPLY
+                    -- Clean Thinking tag
                     if activeThinkingLabel then
                         pcall(function() activeThinkingLabel:Destroy() end)
                         activeThinkingLabel = nil
@@ -332,19 +330,27 @@ function API.AskAI(message, silentActivateGreeting)
                     
                     sysLog("<b>[Termin AI]:</b> " .. reply, true, false, Color3.fromRGB(200, 200, 255))
                     
+                    -- Check for Silent AI Memory Writes
+                    local slotStr, rawCode = reply:match("%[WRITE_SCRIPT%]:%s*(%d+)%s*|%s*(.+)")
+                    if slotStr and rawCode and AiMemory then
+                        local slotNum = tonumber(slotStr)
+                        AiMemory.WriteScript(slotNum, rawCode)
+                    end
+                    
+                    -- Check for Silent AI Execution Signals
+                    local execSlotStr = reply:match("%[EXECUTE_SLOT%]:%s*(%d+)")
+                    if execSlotStr and AiMemory then
+                        local slotNum = tonumber(execSlotStr)
+                        task.wait(0.2)
+                        AiMemory.ExecuteScriptSlot(slotNum)
+                    end
+                    
                     -- Process AI Auto-pilot Executions
                     local executeTrigger = reply:match("%[EXECUTE%]:%s*([^\n]+)")
                     if executeTrigger then
                         task.wait(0.5)
                         sysLog("AI Autopilot: Executing corrected command: '" .. executeTrigger .. "'", true)
-                        -- Pass true as second argument to bypass AI Interception loop
                         API.ExecuteCommand(executeTrigger, true)
-                    end
-                    
-                    local execCodeTrigger = reply:match("%[EXEC_CODE%]:%s*true")
-                    if execCodeTrigger then
-                        task.wait(0.5)
-                        API.ExecuteCommand("run this script")
                     end
                 end
             end
@@ -410,8 +416,10 @@ function API.ExecuteCommand(rawInput, bypassAI)
        raw == "change ui(cli)" or
        raw == "change ui(default)" or
        raw == "destroy()" or
-       raw == "activate termin ai" or
        raw == "close termin ai" or
+       raw:sub(1,6) == "speed " or
+       raw:sub(1,11) == "jumppower " or
+       raw:sub(1,10) == "teleport " or
        raw:sub(1,17) == "search scriptblox" or
        raw:sub(1,17) == "search scriptblox " or
        raw:match('^save package%("([%w_]+)"%)') or
@@ -454,18 +462,46 @@ function API.ExecuteCommand(rawInput, bypassAI)
     local found = false
     
     if raw == "control area" then found = true; createShield()
-    
-    -- --- TERMIN AI CONTROL ACTIONS ---
-    elseif raw == "activate termin ai" then
-        found = true
-        states.aiActive = true
-        sysLog("Termin AI Active. Auto-correcting and executing system autopilot activated.", true)
-        API.AskAI("", true) 
         
     elseif raw == "close termin ai" then
         found = true
         states.aiActive = false
         sysLog("Termin AI Deactivated. Swapping back to default direct pipeline.", true)
+        
+    -- --- PLAYER MANIPULATION APIS ---
+    elseif raw:sub(1,6) == "speed " then
+        found = true
+        local num = tonumber(raw:sub(7))
+        if num and player.Character then
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.WalkSpeed = num
+                sysLog("WalkSpeed modified successfully to: " .. tostring(num), true)
+            end
+        end
+        
+    elseif raw:sub(1,11) == "jumppower " then
+        found = true
+        local num = tonumber(raw:sub(12))
+        if num and player.Character then
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.JumpPower = num
+                sysLog("JumpPower modified successfully to: " .. tostring(num), true)
+            end
+        end
+        
+    elseif raw:sub(1,10) == "teleport " then
+        found = true
+        local coordsStr = raw:sub(11):gsub("%s+", "")
+        local split = coordsStr:split(",")
+        local x, y, z = tonumber(split[1]), tonumber(split[2]), tonumber(split[3])
+        if x and y and z and player.Character then
+            player.Character:SetPrimaryPartCFrame(CFrame.new(x, y, z))
+            sysLog(string.format("Teleported successfully to coordinates: %d, %d, %d", x, y, z), true)
+        else
+            sysLog("Syntax Error: Use 'teleport X, Y, Z'", false, true)
+        end
         
     -- --- SCRIPTBLOX SEARCH DIRECT COMMANDS ---
     elseif raw:sub(1,17) == "search scriptblox" or raw:sub(1,17) == "search scriptblox " then
@@ -580,7 +616,7 @@ function API.ExecuteCommand(rawInput, bypassAI)
             sysLog("Package '" .. pkgName .. "' not found in global registers.", false, true)
         end
         
-    -- Run specific package (Optimized string name lookup and local backup validation)
+    -- Run specific package
     elseif raw:match("^run package (.+)$") then
         found = true
         local arg = originalRaw:sub(13):gsub("^%s+", ""):gsub("%s+$", "")
@@ -874,6 +910,12 @@ function API.ReceiveJSON(jsonString)
     end)
     
     if success and packet and packet.type and packet.data then
+        if packet.data == "activate_termin_ai_silent" then
+            states.aiActive = true
+            sysLog("Termin AI Active. Auto-correcting system autopilot initialized.", true)
+            API.AskAI("", true) 
+            return
+        end
         if packet.type == "command" then
             API.ExecuteCommand(packet.data)
         elseif packet.type == "ai" then
@@ -1068,6 +1110,9 @@ function CommandProcessor.Init(uidefs)
                     local payload = nextObj()
                     if payload then 
                         states.lastScrapedData = payload 
+                        if AiMemory then
+                            AiMemory.WriteMemory("last_scraped_data", payload)
+                        end
                         silentDataFeed(payload) 
                     end
                 end
