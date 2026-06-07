@@ -1,5 +1,6 @@
 -- --- Terminal V5.2 Bootloader ---
 
+-- 1. Securely fetch the API key from local workspace
 local function getLocalKey()
     local fileName = "api_key"
     if isfile(fileName) then
@@ -22,6 +23,7 @@ local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
+-- --- GLOBAL GUI BASE ---
 local mainGui = Instance.new("ScreenGui", playerGui)
 mainGui.Name = "TerminalV5_Unified"
 mainGui.ResetOnSpawn = false
@@ -30,8 +32,10 @@ mainGui.ResetOnSpawn = false
 local defaultUI = Instance.new("Frame", mainGui)
 defaultUI.Name = "DefaultUI"
 defaultUI.Size = UDim2.new(1, 0, 1, 0)
+defaultUI.Position = UDim2.new(0, 0, 0, 0)
 defaultUI.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
 defaultUI.BackgroundTransparency = 0.25
+defaultUI.Visible = true
 
 local defScroll = Instance.new("ScrollingFrame", defaultUI)
 defScroll.Size = UDim2.new(1, -20, 1, -60)
@@ -39,18 +43,22 @@ defScroll.Position = UDim2.new(0, 10, 0, 10)
 defScroll.BackgroundTransparency = 1
 defScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 defScroll.ScrollBarThickness = 4
+defScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 
 local defLayout = Instance.new("UIListLayout", defScroll)
 defLayout.SortOrder = Enum.SortOrder.LayoutOrder
 defLayout.Padding = UDim.new(0, 4)
 
+-- Input line container
 local defInputLine = Instance.new("Frame", defaultUI)
 defInputLine.Size = UDim2.new(1, -20, 0, 30)
 defInputLine.Position = UDim2.new(0, 10, 1, -40)
 defInputLine.BackgroundTransparency = 1
 
+-- Prefix label removed to keep only the blinking cursor in the typing bar
 local defTextBox = Instance.new("TextBox", defInputLine)
 defTextBox.Size = UDim2.new(1, 0, 1, 0)
+defTextBox.Position = UDim2.new(0, 0, 0, 0)
 defTextBox.BackgroundTransparency = 1
 defTextBox.Text = ""
 defTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -59,6 +67,7 @@ defTextBox.Font = Enum.Font.Code
 defTextBox.TextXAlignment = Enum.TextXAlignment.Left
 defTextBox.ClearTextOnFocus = false
 
+-- Blinking cursor simulation
 local defCursor = Instance.new("TextLabel", defTextBox)
 defCursor.Size = UDim2.new(0, 15, 1, 0)
 defCursor.BackgroundTransparency = 1
@@ -86,6 +95,7 @@ local function updateCursorPosition()
 end
 defTextBox:GetPropertyChangedSignal("Text"):Connect(updateCursorPosition)
 
+-- Default Close/Hide Button
 local defClose = Instance.new("TextButton", defaultUI)
 defClose.Size = UDim2.new(0, 30, 0, 30)
 defClose.Position = UDim2.new(1, -40, 0, 10)
@@ -105,6 +115,7 @@ cliUI.Draggable = true
 cliUI.Visible = false
 Instance.new("UICorner", cliUI)
 
+-- --- ANIMATED NEON LED EDGES (CLI ONLY) ---
 local ledStroke = Instance.new("UIStroke", cliUI)
 ledStroke.Thickness = 2.5
 ledStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
@@ -112,8 +123,8 @@ ledStroke.Color = Color3.fromRGB(255, 255, 255)
 
 local ledGradient = Instance.new("UIGradient", ledStroke)
 ledGradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0.00, Color3.fromRGB(230, 0, 115)),
-    ColorSequenceKeypoint.new(0.25, Color3.fromRGB(0, 35, 160)),
+    ColorSequenceKeypoint.new(0.00, Color3.fromRGB(230, 0, 115)),  -- Neon Pink
+    ColorSequenceKeypoint.new(0.25, Color3.fromRGB(0, 35, 160)),   -- Neon Blue
     ColorSequenceKeypoint.new(0.50, Color3.fromRGB(230, 0, 115)),
     ColorSequenceKeypoint.new(0.75, Color3.fromRGB(0, 35, 160)),
     ColorSequenceKeypoint.new(1.00, Color3.fromRGB(230, 0, 115))
@@ -150,6 +161,7 @@ cliClose.TextColor3 = Color3.fromRGB(255, 100, 100)
 cliClose.BackgroundTransparency = 1
 cliClose.TextSize = 24
 
+-- Sidebar elements
 local cliSidebar = Instance.new("Frame", cliUI)
 cliSidebar.Size = UDim2.new(0, 80, 1, -30)
 cliSidebar.Position = UDim2.new(0, 0, 0, 30)
@@ -176,10 +188,12 @@ local cmdBtn = createSidebarBtn("CMD")
 local aiBtn = createSidebarBtn("Termin")
 local bloxBtn = createSidebarBtn("ScriptBlox")
 
+-- CLI CMD panel
 local cliCmdPanel = Instance.new("Frame", cliUI)
 cliCmdPanel.Size = UDim2.new(1, -90, 1, -30)
 cliCmdPanel.Position = UDim2.new(0, 85, 0, 30)
 cliCmdPanel.BackgroundTransparency = 1
+cliCmdPanel.Visible = true
 
 local cliCmdScroll = Instance.new("ScrollingFrame", cliCmdPanel)
 cliCmdScroll.Size = UDim2.new(1, -5, 1, -45)
@@ -222,7 +236,7 @@ cliCmdInput.TextSize = 16
 cliCmdInput.Font = Enum.Font.Code
 cliCmdInput.TextXAlignment = Enum.TextXAlignment.Left
 
--- AI and ScriptBlox subpanels
+-- AI and ScriptBlox Panel containers preserved inside CLI context (handled dynamically inside Module)
 local cliAiPanel = Instance.new("Frame", cliUI)
 cliAiPanel.Size = UDim2.new(1, -90, 1, -30)
 cliAiPanel.Position = UDim2.new(0, 85, 0, 30)
@@ -233,6 +247,7 @@ local cliAiScroll = Instance.new("ScrollingFrame", cliAiPanel)
 cliAiScroll.Size = UDim2.new(1, -5, 1, -45)
 cliAiScroll.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 cliAiScroll.AutomaticCanvasSize = "Y"
+cliAiScroll.ScrollBarThickness = 4
 Instance.new("UICorner", cliAiScroll)
 
 local cliAiOutput = Instance.new("TextLabel", cliAiScroll)
@@ -254,6 +269,7 @@ cliAiInput.Size = UDim2.new(1, -10, 1, 0)
 cliAiInput.Position = UDim2.new(0, 5, 0, 0)
 cliAiInput.BackgroundTransparency = 1
 cliAiInput.TextColor3 = Color3.new(1, 1, 1)
+cliAiInput.TextSize = 16
 
 local cliBloxPanel = Instance.new("Frame", cliUI)
 cliBloxPanel.Size = UDim2.new(1, -90, 1, -30)
@@ -294,7 +310,7 @@ cliBloxInput.TextColor3 = Color3.new(1, 1, 1)
 local toggleSquare = Instance.new("TextButton", mainGui)
 toggleSquare.Name = "ToggleSquare"
 toggleSquare.Size = UDim2.new(0, 35, 0, 35)
-toggleSquare.Position = UDim2.new(1, -45, 0, 10)
+toggleSquare.Position = UDim2.new(1, -45, 0, 10) -- Top-right corner
 toggleSquare.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 toggleSquare.BackgroundTransparency = 0.5
 toggleSquare.Text = "T"
@@ -303,8 +319,12 @@ toggleSquare.TextSize = 18
 toggleSquare.Font = Enum.Font.SourceSansBold
 toggleSquare.Visible = false
 
+-- Custom Drag Handler for Square Toggle
 local dragging = false
-local dragInput, dragStart, startPos, moved
+local dragInput
+local dragStart
+local startPos
+local moved = false
 
 toggleSquare.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -338,11 +358,14 @@ end)
 UserInputService.InputChanged:Connect(function(input)
     if input == dragInput and dragging then
         local delta = input.Position - dragStart
-        if delta.Magnitude > 5 then moved = true end
+        if delta.Magnitude > 5 then
+            moved = true
+        end
         toggleSquare.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
 end)
 
+-- Core hide handler
 local function hideAll()
     defaultUI.Visible = false
     cliUI.Visible = false
@@ -352,6 +375,7 @@ end
 cliClose.MouseButton1Click:Connect(hideAll)
 defClose.MouseButton1Click:Connect(hideAll)
 
+-- Theme visual routers
 _G.CurrentUITheme = "default"
 local function swapUITheme(theme)
     _G.CurrentUITheme = theme:lower()
@@ -364,21 +388,23 @@ local function swapUITheme(theme)
     end
 end
 
+-- --- CLIENTSIDE DYNAMIC TEXT LOGGER (For full conch lines) ---
 local function printDefaultLine(text, color)
     local line = Instance.new("TextLabel", defScroll)
     line.Size = UDim2.new(1, 0, 0, 20)
     line.BackgroundTransparency = 1
     line.Text = text
-    line.TextColor3 = color or Color3.fromRGB(0, 160, 255)
+    line.TextColor3 = color or Color3.fromRGB(0, 160, 255) -- Default Blue
     line.TextSize = 16
     line.Font = Enum.Font.Code
     line.TextXAlignment = Enum.TextXAlignment.Left
     line.RichText = true
     line.TextWrapped = true
     defScroll.CanvasPosition = Vector2.new(0, 999999)
+    return line -- FIX: Return the line instance so CmdProcessor can sweep it
 end
 
--- --- LOAD PROCESSING CORE ---
+-- --- LOAD STATED-LOGIC SYSTEM FROM GITHUB ---
 local CoreSystem = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/CmdProcessor"))()
 
 local systemAPI = CoreSystem.Init({
@@ -390,36 +416,26 @@ local systemAPI = CoreSystem.Init({
     BloxScroll = cliBloxScroll,
     LedGradient = ledGradient,
     GuiInstance = mainGui,
+    
+    -- Binding Callback API for Fullscreen Render Routing
     DefaultLog = printDefaultLine,
     SetUITheme = swapUITheme
 })
 
+-- --- INITIALIZATION SEQUENCER ---
 local function triggerInitialization()
     printDefaultLine("Terminal V5.0", Color3.fromRGB(0, 160, 255))
-    task.wait(0.2)
-    printDefaultLine("Initializing core routines...", Color3.fromRGB(0, 160, 255))
-    task.wait(0.4)
+    task.wait(0.3)
+    printDefaultLine("Initializing modules...", Color3.fromRGB(0, 160, 255))
+    task.wait(0.8) -- Emulating load sequence asynchronously
     
     if systemAPI then
-        -- Connecting AI Key Initialization Hooks
-        printDefaultLine("Scanning for AI API configurations...", Color3.fromRGB(0, 160, 255))
-        task.wait(0.3)
-        if _G.TERMINAL_KEY and _G.TERMINAL_KEY ~= "" then
-            printDefaultLine("AI Endpoint Configuration Verified [OpenRouter Secured].", Color3.fromRGB(0, 255, 150))
-        else
-            printDefaultLine("Warning: AI API configuration clear. API Key file unreadable.", Color3.fromRGB(255, 150, 0))
-        end
-        task.wait(0.3)
-
-        -- Connecting to ScriptBlox API gateway
-        printDefaultLine("Connecting with ScriptBlox API backend...", Color3.fromRGB(0, 160, 255))
+        printDefaultLine("Initialization successful.", Color3.fromRGB(0, 160, 255))
         task.wait(0.4)
-        printDefaultLine("ScriptBlox API Handshake Successful [Status: 200 OK].", Color3.fromRGB(0, 255, 150))
-        task.wait(0.3)
         
-        -- Scanning for local script directory backups
+        -- SCANNING FOR BACKUPS LOCALLY
         printDefaultLine("Scanning local filesystem backups...", Color3.fromRGB(0, 160, 255))
-        task.wait(0.4)
+        task.wait(0.5)
         local backupsFound = {}
         local backupMappings = {
             "Hiru_Hub.lua", "QuantumOnyx_Project.lua", "Ringta_Scripts_(Patched).lua",
@@ -429,69 +445,100 @@ local function triggerInitialization()
             "script_library_backup.lua"
         }
         for _, file in ipairs(backupMappings) do
-            if isfile and isfile(file) then table.insert(backupsFound, file) end
+            if isfile and isfile(file) then
+                table.insert(backupsFound, file)
+            end
         end
         if #backupsFound > 0 then
-            printDefaultLine("Found (" .. tostring(#backupsFound) .. ") local script backups available:", Color3.fromRGB(0, 160, 255))
-            for _, backup in ipairs(backupsFound) do printDefaultLine(" - " .. backup, Color3.fromRGB(0, 160, 255)) end
+            printDefaultLine("Found (" .. tostring(#backupsFound) .. ") local script backups:", Color3.fromRGB(0, 160, 255))
+            for _, backup in ipairs(backupsFound) do
+                printDefaultLine(" - " .. backup, Color3.fromRGB(0, 160, 255))
+            end
         else
-            printDefaultLine("No standalone local script backups detected.", Color3.fromRGB(255, 150, 0))
+            printDefaultLine("No local script backups detected.", Color3.fromRGB(0, 160, 255))
         end
-        task.wait(0.3)
+        task.wait(0.4)
 
-        printDefaultLine("Fetching engine descriptors...", Color3.fromRGB(0, 160, 255))
-        task.wait(0.5)
+        printDefaultLine("Fetching game data...", Color3.fromRGB(0, 160, 255))
+        task.wait(0.8)
         
+        -- Scanning for Remotes
         local remotes = 0
         for _, obj in pairs(game:GetDescendants()) do
-            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then remotes = remotes + 1 end
+            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                remotes = remotes + 1
+            end
         end
         
-        printDefaultLine("Fetch structural mappings successful. Found (" .. tostring(remotes) .. ") active channels.", Color3.fromRGB(0, 160, 255))
-        task.wait(0.3)
-        printDefaultLine("Server Data Feed: Total players (" .. tostring(#Players:GetPlayers()) .. ") | Place ID: " .. tostring(game.PlaceId), Color3.fromRGB(0, 160, 255))
-        printDefaultLine("Terminal initialization pipeline completed.", Color3.fromRGB(0, 255, 150))
+        printDefaultLine("Fetching game data successful. Found (" .. tostring(remotes) .. ") active secure ports.", Color3.fromRGB(0, 160, 255))
+        task.wait(0.5)
+        printDefaultLine("Waiting for server information...", Color3.fromRGB(0, 160, 255))
+        task.wait(0.7)
+        
+        -- Print statistics
+        printDefaultLine("Current server information:", Color3.fromRGB(0, 160, 255))
+        printDefaultLine("Total player: " .. tostring(#Players:GetPlayers()), Color3.fromRGB(0, 160, 255))
+        printDefaultLine("Current player names:", Color3.fromRGB(0, 160, 255))
+        for i, p in ipairs(Players:GetPlayers()) do
+            printDefaultLine(tostring(i) .. ". " .. p.DisplayName .. " (@" .. p.Name .. ")", Color3.fromRGB(0, 160, 255))
+        end
+        printDefaultLine("Server Place ID: " .. tostring(game.PlaceId), Color3.fromRGB(0, 160, 255))
+        printDefaultLine("Server Job ID: " .. tostring(game.JobId), Color3.fromRGB(0, 160, 255))
     else
-        printDefaultLine("Critical Engine Stack Corrupted.", Color3.fromRGB(255, 50, 50))
+        printDefaultLine("Initialization failed. Verification mismatch.", Color3.fromRGB(255, 50, 50))
     end
 end
 task.spawn(triggerInitialization)
 
+-- --- INPUT TRANSFER PACKETS ---
 defTextBox.FocusLost:Connect(function(enter)
     if enter and defTextBox.Text ~= "" then
         local text = defTextBox.Text
-        defTextBox.Text = ""
-        local dataPacket = HttpService:JSONEncode({type = "command", data = text, sender = "default"})
+        
+        local dataPacket = HttpService:JSONEncode({
+            type = "command",
+            data = text,
+            sender = "default"
+        })
         systemAPI.ReceiveJSON(dataPacket)
+        defTextBox.Text = ""
     end
 end)
 
 cliCmdInput.FocusLost:Connect(function(enter)
     if enter and cliCmdInput.Text ~= "" then
-        local text = cliCmdInput.Text
-        cliCmdInput.Text = ""
-        local dataPacket = HttpService:JSONEncode({type = "command", data = text, sender = "cli"})
+        local dataPacket = HttpService:JSONEncode({
+            type = "command",
+            data = cliCmdInput.Text,
+            sender = "cli"
+        })
         systemAPI.ReceiveJSON(dataPacket)
+        cliCmdInput.Text = ""
     end
 end)
 
 cliAiInput.FocusLost:Connect(function(enter)
     if enter and cliAiInput.Text ~= "" then
-        local text = cliAiInput.Text
-        cliAiInput.Text = ""
-        local dataPacket = HttpService:JSONEncode({type = "ai", data = text})
+        local dataPacket = HttpService:JSONEncode({
+            type = "ai",
+            data = cliAiInput.Text
+        })
         systemAPI.ReceiveJSON(dataPacket)
+        cliAiInput.Text = ""
     end
 end)
 
 cliBloxInput.FocusLost:Connect(function(enter)
     if enter and cliBloxInput.Text ~= "" then
-        local text = cliBloxInput.Text
-        local dataPacket = HttpService:JSONEncode({type = "search", data = text})
+        local dataPacket = HttpService:JSONEncode({
+            type = "search",
+            data = cliBloxInput.Text
+        })
         systemAPI.ReceiveJSON(dataPacket)
     end
 end)
 
+-- Sidebar visuals routers
 local function setSidebarTab(name)
     cliCmdPanel.Visible = (name == "CMD")
     cliAiPanel.Visible = (name == "Termin")
