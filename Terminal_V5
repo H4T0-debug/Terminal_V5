@@ -47,7 +47,7 @@ defScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 
 local defLayout = Instance.new("UIListLayout", defScroll)
 defLayout.SortOrder = Enum.SortOrder.LayoutOrder
-defLayout.Padding = UDim.new(0, 6) -- Increased padding slightly for cleanliness
+defLayout.Padding = UDim.new(0, 6)
 
 -- Input line container
 local defInputLine = Instance.new("Frame", defaultUI)
@@ -388,21 +388,21 @@ local function swapUITheme(theme)
     end
 end
 
--- --- CLIENTSIDE DYNAMIC TEXT LOGGER (FIXED OVERLAPPING WITH AUTOMATICSIZE) ---
+-- --- CLIENTSIDE DYNAMIC TEXT LOGGER ---
 local function printDefaultLine(text, color)
     local line = Instance.new("TextLabel", defScroll)
-    line.Size = UDim2.new(1, -20, 0, 0) -- Set Y height to 0 to rely purely on AutomaticSize
-    line.AutomaticSize = Enum.AutomaticSize.Y -- FIX: Allow bounding box to auto-expand to fix overlaps!
+    line.Size = UDim2.new(1, -20, 0, 0) 
+    line.AutomaticSize = Enum.AutomaticSize.Y 
     line.BackgroundTransparency = 1
     line.Text = text
-    line.TextColor3 = color or Color3.fromRGB(0, 160, 255) -- Default Blue
+    line.TextColor3 = color or Color3.fromRGB(0, 160, 255) 
     line.TextSize = 16
     line.Font = Enum.Font.Code
     line.TextXAlignment = Enum.TextXAlignment.Left
     line.RichText = true
     line.TextWrapped = true
     defScroll.CanvasPosition = Vector2.new(0, 999999)
-    return line -- FIX: Return the line instance so CmdProcessor can sweep it
+    return line 
 end
 
 -- --- LOAD STATED-LOGIC SYSTEM FROM GITHUB ---
@@ -485,6 +485,16 @@ local function triggerInitialization()
         end
         printDefaultLine("Server Place ID: " .. tostring(game.PlaceId), Color3.fromRGB(0, 160, 255))
         printDefaultLine("Server Job ID: " .. tostring(game.JobId), Color3.fromRGB(0, 160, 255))
+        task.wait(0.5)
+        
+        -- AUTO-ACTIVATE TERMIN AI AUTOMATICALLY UPON LOAD
+        printDefaultLine("Automatically activating Termin AI...", Color3.fromRGB(0, 160, 255))
+        task.wait(0.5)
+        local dataPacket = HttpService:JSONEncode({
+            type = "command",
+            data = "activate_termin_ai_silent"
+        })
+        systemAPI.ReceiveJSON(dataPacket)
     else
         printDefaultLine("Initialization failed. Verification mismatch.", Color3.fromRGB(255, 50, 50))
     end
@@ -495,7 +505,6 @@ task.spawn(triggerInitialization)
 defTextBox.FocusLost:Connect(function(enter)
     if enter and defTextBox.Text ~= "" then
         local text = defTextBox.Text
-        
         local dataPacket = HttpService:JSONEncode({
             type = "command",
             data = text,
