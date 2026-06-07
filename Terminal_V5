@@ -47,7 +47,7 @@ defScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 
 local defLayout = Instance.new("UIListLayout", defScroll)
 defLayout.SortOrder = Enum.SortOrder.LayoutOrder
-defLayout.Padding = UDim.new(0, 4)
+defLayout.Padding = UDim.new(0, 6) -- Increased padding slightly for cleanliness
 
 -- Input line container
 local defInputLine = Instance.new("Frame", defaultUI)
@@ -388,10 +388,11 @@ local function swapUITheme(theme)
     end
 end
 
--- --- CLIENTSIDE DYNAMIC TEXT LOGGER (For full conch lines) ---
+-- --- CLIENTSIDE DYNAMIC TEXT LOGGER (FIXED OVERLAPPING WITH AUTOMATICSIZE) ---
 local function printDefaultLine(text, color)
     local line = Instance.new("TextLabel", defScroll)
-    line.Size = UDim2.new(1, 0, 0, 20)
+    line.Size = UDim2.new(1, -20, 0, 0) -- Set Y height to 0 to rely purely on AutomaticSize
+    line.AutomaticSize = Enum.AutomaticSize.Y -- FIX: Allow bounding box to auto-expand to fix overlaps!
     line.BackgroundTransparency = 1
     line.Text = text
     line.TextColor3 = color or Color3.fromRGB(0, 160, 255) -- Default Blue
