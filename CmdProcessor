@@ -279,10 +279,11 @@ function API.AskAI(message, silentActivateGreeting)
 				messages = {
                     {
                         role = "system", 
-                        content = "You are Termin AI, an advanced hacking assistant integrated into Terminal V5.0. You receive live game hierarchy data. " ..
-                                  "You have AUTOPILOT permissions. If the user makes a typo (e.g. 'enabel aimbt', 'start protocol 1 please', 'change rgb red,blue please'), " ..
-                                  "you must automatically correct and execute it on their behalf. To do this, output '[EXECUTE]: <exact_corrected_command_name>' on a new line. " ..
-                                  "Do NOT explain why you corrected it, just append the instruction so the system runs it. " ..
+                        content = "You are Termin AI, an advanced hacking assistant integrated into Terminal V5.0. You receive live game data.\n\n" ..
+                                  "You have AUTOPILOT permissions. If the user makes an obvious typo in a command, you must correct it. " ..
+                                  "To run the corrected command, output '[EXECUTE]: <exact_corrected_command_name>' on a new line.\n" ..
+                                  "CRITICAL RULE: Never correct, run, or call [EXECUTE] for commands that are already perfect or correct. If a command is valid, do not try to run or modify it.\n" ..
+                                  "When correcting commands, always preserve spacing. For example, use 'run package 15' instead of 'runpackage 15'.\n\n" ..
                                   "Available commands:\n" ..
                                   "- control area, start data index, stop data index\n" ..
                                   "- protocol 1, protocol 2, stop, enable chat mode, disable chat mode\n" ..
@@ -336,7 +337,7 @@ function API.AskAI(message, silentActivateGreeting)
                     if executeTrigger then
                         task.wait(0.5)
                         sysLog("AI Autopilot: Executing corrected command: '" .. executeTrigger .. "'", true)
-                        -- FIX: Pass true as second argument to bypass AI Interception loop
+                        -- Pass true as second argument to bypass AI Interception loop
                         API.ExecuteCommand(executeTrigger, true)
                     end
                     
@@ -403,8 +404,49 @@ function API.ExecuteCommand(rawInput, bypassAI)
     end
     commandCount = commandCount + 1
 
-    -- Check if AI is active and intercept all commands (except deactivation and bypassed autopilot runs)
-    if states.aiActive and not bypassAI and raw ~= "close termin ai" then
+    -- --- CHECK FOR VALID LOCAL SYSTEM COMMANDS FIRST TO PREVENT INTERCEPTION ---
+    local isLocalCommand = false
+    if raw == "control area" or
+       raw == "change ui(cli)" or
+       raw == "change ui(default)" or
+       raw == "destroy()" or
+       raw == "activate termin ai" or
+       raw == "close termin ai" or
+       raw:sub(1,17) == "search scriptblox" or
+       raw:sub(1,17) == "search scriptblox " or
+       raw:match('^save package%("([%w_]+)"%)') or
+       raw:match("^save package (%d+)$") or
+       raw:match('^get package%("([%w_]+)"%)') or
+       raw:match("^run package (.+)$") or
+       raw == "enable aimbot" or
+       raw == "disable aimbot" or
+       raw:sub(1,11) == "change rgb " or
+       raw == "start data index" or
+       raw == "stop data index" or
+       raw == "protocol 2" or
+       raw == "enable chat mode" or
+       raw == "disable chat mode" or
+       raw == "tp mn" or
+       raw == "tp pas" or
+       raw == "protocol 1" or
+       raw == "loop fling all" or
+       raw == "stop" or
+       raw == "tp as" or
+       raw == "tp cr" or
+       raw == "enable fling aura" or
+       raw == "disable fling aura" or
+       raw:sub(1,6) == "fling " or
+       raw:sub(1,9) == "trashcan " or
+       raw == "stop trashcan" or
+       raw == "enable antifling" or
+       raw == "disable antifling" or
+       raw == "enable esp" or
+       raw == "clear" then
+        isLocalCommand = true
+    end
+
+    -- Check if AI is active and intercept all inputs (except direct commands and deactivators)
+    if states.aiActive and not bypassAI and not isLocalCommand then
         API.AskAI(originalRaw)
         return
     end
