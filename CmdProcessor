@@ -62,9 +62,10 @@ local loadedLibrary = nil
 local connections = {}
 local shieldInstance = nil
 
+local commandCount = 0 -- Keeps track of command instances globally
+
 -- Smart Multi-Theme Console Log Router
-local firstDefaultCommand = true
-local function sysLog(text, isSystem, isError)
+local function sysLog(text, isSystem, isError, colorOverride)
     -- Log to CLI Theme Console if reference active
     if uiRef.OutputLabel then
         local color = isError and "rgb(255, 100, 100)" or (isSystem and "rgb(0, 255, 255)" or "rgb(0, 255, 0)")
@@ -75,7 +76,7 @@ local function sysLog(text, isSystem, isError)
     
     -- Log to Fullscreen Default Theme Console if reference active
     if uiRef.DefaultLog then
-        local color = isError and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(0, 160, 255)
+        local color = colorOverride or (isError and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(0, 160, 255))
         uiRef.DefaultLog(text, color)
     end
 end
@@ -338,10 +339,16 @@ function API.ExecuteCommand(rawInput)
 
     local raw = originalRaw:lower()
     
-    -- In CLI mode print input echoing, default mode handles it client side
+    -- Print input echoes inside execution module instead of locally inside textboxes
     if _G.CurrentUITheme == "cli" then
         sysLog("$ " .. raw, false)
+    else
+        -- Default UI Echo formatting: First Command has prefix, subsequent ones use "~"
+        local prefix = (commandCount == 0) and "Enter command: " or "~ "
+        sysLog(prefix .. originalRaw, false, false, Color3.fromRGB(255, 255, 255)) -- Render in pure white
     end
+    
+    commandCount = commandCount + 1 -- Increment overall entered count
     
     local found = false
     
@@ -704,12 +711,6 @@ function API.ExecuteCommand(rawInput)
         sysLog("ESP Enabled.", true)
     elseif raw == "clear" then
         found = true; uiRef.OutputLabel.Text = "[SYSTEM] Console Cleared."
-    end
-    
-    -- Prompt interface updating
-    if firstDefaultCommand and _G.CurrentUITheme == "default" then
-        firstDefaultCommand = false
-        if uiRef.SetInputPrefix then uiRef.SetInputPrefix("~ ") end
     end
     
     if not found then sysLog("Error: command doesn't exist.", false, true) end
