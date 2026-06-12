@@ -77,19 +77,19 @@ local AiMemory = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0
 -- Smart Multi-Theme Console Log Router
 local function sysLog(text, isSystem, isError, colorOverride)
     local createdLabel = nil
-    
+
     if uiRef.OutputLabel then
         local color = isError and "rgb(255, 100, 100)" or (isSystem and "rgb(0, 255, 255)" or "rgb(0, 255, 0)")
         uiRef.OutputLabel.Text = uiRef.OutputLabel.Text .. string.format("\n<font color='%s'>%s%s</font>", color, isSystem and "[SYSTEM] " or "", text)
         task.wait(0.05)
         uiRef.CmdScroll.CanvasPosition = Vector2.new(0, 99999)
     end
-    
+
     if uiRef.DefaultLog then
         local color = colorOverride or (isError and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(0, 160, 255))
         createdLabel = uiRef.DefaultLog(text, color)
     end
-    
+
     return createdLabel
 end
 
@@ -176,13 +176,13 @@ end
 local function getClosestVisibleTarget()
     local localCharacter = player.Character
     if not localCharacter then return nil end
-    
+
     local localHrp = localCharacter:FindFirstChild("HumanoidRootPart")
     if not localHrp then return nil end
-    
+
     local shortestDistance = 200
     local nearestTarget = nil
-    
+
     for _, targetPlayer in pairs(Players:GetPlayers()) do
         if targetPlayer ~= player then
             if targetPlayer.Team ~= player.Team or player.Team == nil then
@@ -190,7 +190,7 @@ local function getClosestVisibleTarget()
                 if targetCharacter then
                     local targetHrp = targetCharacter:FindFirstChild("HumanoidRootPart")
                     local targetHumanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
-                    
+
                     if targetHrp and targetHumanoid and targetHumanoid.Health > 0 then
                         local distance = (localHrp.Position - targetHrp.Position).Magnitude
                         if distance < shortestDistance then
@@ -211,13 +211,13 @@ local function getPredictedPosition(targetChar)
     local targetHrp = targetChar:FindFirstChild("HumanoidRootPart")
     local localHrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     if not targetHrp or not localHrp then return nil end
-    
+
     local targetVelocity = targetHrp.AssemblyLinearVelocity
     local distance = (localHrp.Position - targetHrp.Position).Magnitude
-    
+
     local projectileSpeed = 300
     local travelTime = distance / projectileSpeed
-    
+
     local predictedPosition = targetHrp.Position + (targetVelocity * travelTime)
     return predictedPosition
 end
@@ -253,25 +253,25 @@ function API.AskAI(message, silentActivateGreeting)
         uiRef.CmdScroll.CanvasPosition = Vector2.new(0, 99999)
     end
 
-	task.spawn(function()
-		local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
-		if not requestFunc then 
-			sysLog("Error: Executor does not support requests.", false, true)
-			return 
-		end
+        task.spawn(function()
+                local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
+                if not requestFunc then 
+                        sysLog("Error: Executor does not support requests.", false, true)
+                        return 
+                end
 
-		local response = requestFunc({
-			Url = "https://openrouter.ai/api/v1/chat/completions",
-			Method = "POST",
-			Headers = {
-				["Content-Type"] = "application/json",
-				["Authorization"] = "Bearer " .. uiRef.APIKey,
+                local response = requestFunc({
+                        Url = "https://openrouter.ai/api/v1/chat/completions",
+                        Method = "POST",
+                        Headers = {
+                                ["Content-Type"] = "application/json",
+                                ["Authorization"] = "Bearer " .. uiRef.APIKey,
                 ["HTTP-Referer"] = "https://roblox.com",
                 ["X-Title"] = "Roblox Terminal"
-			},
-			Body = HttpService:JSONEncode({
-				model = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", 
-				messages = {
+                        },
+                        Body = HttpService:JSONEncode({
+                                model = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", 
+                                messages = {
                     {
                         role = "system", 
                         content = "You are Termin AI, an advanced hacking assistant integrated into Terminal V5.0. You receive live game data.\n\n" ..
@@ -300,19 +300,19 @@ function API.AskAI(message, silentActivateGreeting)
                                   "- run package [number], run package [hub name]\n" ..
                                   "- enable aimbot, disable aimbot, change rgb [color,color]\n"
                     },
-					{role = "user", content = "CURRENT_GAME_DATA: " .. states.lastScrapedData .. "\n\nUSER_MESSAGE: " .. actualMessage}
-				},
-				max_tokens = 1000
-			}),
+                                        {role = "user", content = "CURRENT_GAME_DATA: " .. states.lastScrapedData .. "\n\nUSER_MESSAGE: " .. actualMessage}
+                                },
+                                max_tokens = 1000
+                        }),
             Timeout = 60
-		})
+                })
 
-		if response.Success then
-			local success, data = pcall(function() return HttpService:JSONDecode(response.Body) end)
+                if response.Success then
+                        local success, data = pcall(function() return HttpService:JSONDecode(response.Body) end)
             if success and data and data.choices and data.choices[1] and data.choices[1].message then
                 local msgData = data.choices[1].message
-			    local reply = msgData.content or ""
-                
+                            local reply = msgData.content or ""
+
                 if reply ~= "" then
                     -- Clean Thinking tag
                     if activeThinkingLabel then
@@ -327,16 +327,16 @@ function API.AskAI(message, silentActivateGreeting)
                             uiRef.OutputLabel.Text = cleaned
                         end)
                     end
-                    
+
                     sysLog("<b>[Termin AI]:</b> " .. reply, true, false, Color3.fromRGB(200, 200, 255))
-                    
+
                     -- Check for Silent AI Memory Writes
                     local slotStr, rawCode = reply:match("%[WRITE_SCRIPT%]:%s*(%d+)%s*|%s*(.+)")
                     if slotStr and rawCode and AiMemory then
                         local slotNum = tonumber(slotStr)
                         AiMemory.WriteScript(slotNum, rawCode)
                     end
-                    
+
                     -- Check for Silent AI Execution Signals
                     local execSlotStr = reply:match("%[EXECUTE_SLOT%]:%s*(%d+)")
                     if execSlotStr and AiMemory then
@@ -344,7 +344,7 @@ function API.AskAI(message, silentActivateGreeting)
                         task.wait(0.2)
                         AiMemory.ExecuteScriptSlot(slotNum)
                     end
-                    
+
                     -- Process AI Auto-pilot Executions
                     local executeTrigger = reply:match("%[EXECUTE%]:%s*([^\n]+)")
                     if executeTrigger then
@@ -354,19 +354,19 @@ function API.AskAI(message, silentActivateGreeting)
                     end
                 end
             end
-		end
-	end)
+                end
+        end)
 end
 
 function API.SearchScriptBlox(query)
     lastScriptBloxResults = {}
-    
+
     local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
     if not requestFunc then 
         sysLog("Error: Executor request API is unsupported.", false, true)
         return 
     end
-    
+
     task.spawn(function()
         local url = "https://scriptblox.com/api/script/search?q=" .. HttpService:UrlEncode(query) .. "&mode=free"
         local response = requestFunc({Url = url, Method = "GET"})
@@ -400,7 +400,7 @@ function API.ExecuteCommand(rawInput, bypassAI)
     end
 
     local raw = originalRaw:lower()
-    
+
     -- Echo command input logs
     if _G.CurrentUITheme == "cli" then
         sysLog("$ " .. raw, false)
@@ -412,14 +412,21 @@ function API.ExecuteCommand(rawInput, bypassAI)
 
     -- --- CHECK FOR VALID LOCAL SYSTEM COMMANDS FIRST TO PREVENT INTERCEPTION ---
     local isLocalCommand = false
+    local function matches(pattern)
+        return raw:match(pattern) ~= nil
+    end
+
     if raw == "control area" or
        raw == "change ui(cli)" or
        raw == "change ui(default)" or
        raw == "destroy()" or
        raw == "close termin ai" or
-       raw:sub(1,6) == "speed " or
-       raw:sub(1,11) == "jumppower " or
-       raw:sub(1,10) == "teleport " or
+       matches("^speed%s*%d+") or
+       matches("^speed%d+") or
+       matches("^change%s+my%s+speed%s+to%s*%d+") or
+       matches("^jumppower%s*%d+") or
+       matches("^jumppower%d+") or
+       matches("^teleport%s*[%d%.%-]+%s*,%s*[%d%.%-]+%s*,%s*[%d%.%-]+") or
        raw:sub(1,17) == "search scriptblox" or
        raw:sub(1,17) == "search scriptblox " or
        raw:match('^save package%("([%w_]+)"%)') or
@@ -460,49 +467,98 @@ function API.ExecuteCommand(rawInput, bypassAI)
     end
 
     local found = false
-    
+
     if raw == "control area" then found = true; createShield()
-        
+
     elseif raw == "close termin ai" then
         found = true
         states.aiActive = false
         sysLog("Termin AI Deactivated. Swapping back to default direct pipeline.", true)
-        
+
     -- --- PLAYER MANIPULATION APIS ---
-    elseif raw:sub(1,6) == "speed " then
+    elseif raw:match("^speed%s*(%d+)") or raw:match("^change%s+my%s+speed%s+to%s*(%d+)") then
         found = true
-        local num = tonumber(raw:sub(7))
+        local numStr = raw:match("^speed%s*(%d+)") or raw:match("^change%s+my%s+speed%s+to%s*(%d+)")
+        local num = tonumber(numStr)
         if num and player.Character then
             local hum = player.Character:FindFirstChildOfClass("Humanoid")
             if hum then
                 hum.WalkSpeed = num
                 sysLog("WalkSpeed modified successfully to: " .. tostring(num), true)
+
+                -- Dynamic JSON Event logging to aiMemory
+                if AiMemory then
+                    local success, jsonPayload = pcall(function()
+                        return HttpService:JSONEncode({
+                            event = "WALKSPEED_UPDATE",
+                            timestamp = os.time(),
+                            sender = player.Name,
+                            value = num
+                        })
+                    end)
+                    if success then
+                        AiMemory.WriteMemory("last_speed_event", jsonPayload)
+                    end
+                end
             end
         end
-        
-    elseif raw:sub(1,11) == "jumppower " then
+
+    elseif raw:match("^jumppower%s*(%d+)") then
         found = true
-        local num = tonumber(raw:sub(12))
+        local numStr = raw:match("^jumppower%s*(%d+)")
+        local num = tonumber(numStr)
         if num and player.Character then
             local hum = player.Character:FindFirstChildOfClass("Humanoid")
             if hum then
                 hum.JumpPower = num
                 sysLog("JumpPower modified successfully to: " .. tostring(num), true)
+
+                -- Dynamic JSON Event logging to aiMemory
+                if AiMemory then
+                    local success, jsonPayload = pcall(function()
+                        return HttpService:JSONEncode({
+                            event = "JUMPPOWER_UPDATE",
+                            timestamp = os.time(),
+                            sender = player.Name,
+                            value = num
+                        })
+                    end)
+                    if success then
+                        AiMemory.WriteMemory("last_jumppower_event", jsonPayload)
+                    end
+                end
             end
         end
-        
-    elseif raw:sub(1,10) == "teleport " then
+
+    elseif raw:match("^teleport%s*([%d%.%-]+)%s*,%s*([%d%.%-]+)%s*,%s*([%d%.%-]+)") or raw:match("^teleport%s*([%d%.%-]+)%s+([%d%.%-]+)%s+([%d%.%-]+)") then
         found = true
-        local coordsStr = raw:sub(11):gsub("%s+", "")
-        local split = coordsStr:split(",")
-        local x, y, z = tonumber(split[1]), tonumber(split[2]), tonumber(split[3])
+        local xStr, yStr, zStr = raw:match("^teleport%s*([%d%.%-]+)%s*,%s*([%d%.%-]+)%s*,%s*([%d%.%-]+)")
+        if not xStr then
+            xStr, yStr, zStr = raw:match("^teleport%s*([%d%.%-]+)%s+([%d%.%-]+)%s+([%d%.%-]+)")
+        end
+        local x, y, z = tonumber(xStr), tonumber(yStr), tonumber(zStr)
         if x and y and z and player.Character then
             player.Character:SetPrimaryPartCFrame(CFrame.new(x, y, z))
             sysLog(string.format("Teleported successfully to coordinates: %d, %d, %d", x, y, z), true)
+
+            -- Dynamic JSON Event logging to aiMemory
+            if AiMemory then
+                local success, jsonPayload = pcall(function()
+                    return HttpService:JSONEncode({
+                        event = "TELEPORT_UPDATE",
+                        timestamp = os.time(),
+                        sender = player.Name,
+                        coordinates = {x = x, y = y, z = z}
+                    })
+                end)
+                if success then
+                    AiMemory.WriteMemory("last_teleport_event", jsonPayload)
+                end
+            end
         else
             sysLog("Syntax Error: Use 'teleport X, Y, Z'", false, true)
         end
-        
+
     -- --- SCRIPTBLOX SEARCH DIRECT COMMANDS ---
     elseif raw:sub(1,17) == "search scriptblox" or raw:sub(1,17) == "search scriptblox " then
         found = true
@@ -513,7 +569,7 @@ function API.ExecuteCommand(rawInput, bypassAI)
         else
             sysLog("Syntax Error: Use 'search scriptblox [prompt]'", false, true)
         end
-        
+
     -- --- DYNAMIC THEME SYSTEM TOGGLES ---
     elseif raw == "change ui(cli)" then
         found = true
@@ -521,20 +577,20 @@ function API.ExecuteCommand(rawInput, bypassAI)
             uiRef.SetUITheme("CLI")
             sysLog("UI theme swapped to Premium CLI.", true)
         end
-        
+
     elseif raw == "change ui(default)" then
         found = true
         if uiRef.SetUITheme then
             uiRef.SetUITheme("Default")
             sysLog("UI theme swapped to Immersive Fullscreen Default.", true)
         end
-        
+
     elseif raw == "destroy()" then
         found = true
         sysLog("De-initializing resources and wiping console instances.", true)
         task.wait(0.5)
         if uiRef.GuiInstance then uiRef.GuiInstance:Destroy() end
-    
+
     -- --- SAVE FILE FEATURES ---
     elseif raw:match('^save package%("([%w_]+)"%)') then
         found = true
@@ -575,7 +631,7 @@ function API.ExecuteCommand(rawInput, bypassAI)
                     if writefile then
                         local codeToWrite = scriptItem.RawCode or "-- No execution strings registered."
                         local safeName = LibraryMappings[idx] or (scriptItem.Name:gsub("%s+", "_") .. ".lua")
-                        
+
                         writefile(safeName, codeToWrite)
                         sysLog("SUCCESS: Standalone saved as '" .. safeName .. "'!", true)
                     else
@@ -592,14 +648,14 @@ function API.ExecuteCommand(rawInput, bypassAI)
     elseif raw:match('^get package%("([%w_]+)"%)') then
         found = true
         local pkgName = originalRaw:match('get package%("([%w_]+)"%)')
-        
+
         if pkgName == "scriptLibrary" then
             sysLog("Fetching package 'scriptLibrary' from database...", true)
             task.spawn(function()
                 local success, lib = pcall(function()
                     return loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/scriptLibrary"))()
                 end)
-                
+
                 if success and lib and lib.Catalog then
                     loadedLibrary = lib
                     sysLog("Package loaded! Database catalogs decoded successfully.", true)
@@ -615,13 +671,13 @@ function API.ExecuteCommand(rawInput, bypassAI)
         else
             sysLog("Package '" .. pkgName .. "' not found in global registers.", false, true)
         end
-        
+
     -- Run specific package
     elseif raw:match("^run package (.+)$") then
         found = true
         local arg = originalRaw:sub(13):gsub("^%s+", ""):gsub("%s+$", "")
         local idx = tonumber(arg)
-        
+
         if idx then
             -- 1. Execute ScriptBlox search cache result
             if lastScriptBloxResults[idx] then
@@ -632,7 +688,7 @@ function API.ExecuteCommand(rawInput, bypassAI)
                     end)
                     if not success then sysLog("Execution Error: " .. tostring(err), false, true) end
                 end)
-                
+
             -- 2. Execute static mapping index from catalog / local files
             else
                 local localFileName = LibraryMappings[idx]
@@ -653,7 +709,7 @@ function API.ExecuteCommand(rawInput, bypassAI)
             local cleanArg = arg:lower():gsub("%s+", ""):gsub("_", "")
             local targetItem = nil
             local matchedIdx = nil
-            
+
             if loadedLibrary and loadedLibrary.Catalog then
                 for i, item in ipairs(loadedLibrary.Catalog) do
                     local cleanName = item.Name:lower():gsub("%s+", ""):gsub("_", "")
@@ -664,7 +720,7 @@ function API.ExecuteCommand(rawInput, bypassAI)
                     end
                 end
             end
-            
+
             if targetItem and matchedIdx then
                 -- Check for local file first
                 local localFileName = LibraryMappings[matchedIdx]
@@ -692,34 +748,34 @@ function API.ExecuteCommand(rawInput, bypassAI)
                 end
             end
         end
-        
+
     -- --- NEW AIMBOT COMMANDS ---
     elseif raw == "enable aimbot" then
         found = true; states.aimbot = true; sysLog("Silent humanized aimbot initialized.", true)
     elseif raw == "disable aimbot" then
         found = true; states.aimbot = false; sysLog("Aimbot deactivated.", true)
-    
+
     elseif raw:sub(1,11) == "change rgb " then
         found = true
         local colorArgs = originalRaw:sub(12):gsub("%s+", "")
         local split = colorArgs:split(",")
         local color1Name, color2Name = split[1], split[2]
-        
+
         if color1Name and color2Name and ColorPicker and uiRef.LedGradient then
             local jsonPayload = HttpService:JSONEncode({
                 color1 = color1Name,
                 color2 = color2Name
             })
-            
+
             local jsonResponse = ColorPicker.ProcessRequest(jsonPayload)
             local success, response = pcall(function()
                 return HttpService:JSONDecode(jsonResponse)
             end)
-            
+
             if success and response and response.success then
                 local c1 = Color3.fromRGB(response.color1.r, response.color1.g, response.color1.b)
                 local c2 = Color3.fromRGB(response.color2.r, response.color2.g, response.color2.b)
-                
+
                 uiRef.LedGradient.Color = ColorSequence.new({
                     ColorSequenceKeypoint.new(0.00, c1),
                     ColorSequenceKeypoint.new(0.25, c2),
@@ -735,7 +791,7 @@ function API.ExecuteCommand(rawInput, bypassAI)
         else
             sysLog("Syntax Error: Use 'change rgb color1,color2'", false, true)
         end
-        
+
     elseif raw == "start data index" then
         found = true; print(player.DisplayName .. ":UTF-70:freemium")
         sysLog("Data Indexing: ACTIVATED (Signal Sent)", true)
@@ -899,7 +955,7 @@ function API.ExecuteCommand(rawInput, bypassAI)
     elseif raw == "clear" then
         found = true; uiRef.OutputLabel.Text = "[SYSTEM] Console Cleared."
     end
-    
+
     if not found then sysLog("Error: command doesn't exist.", false, true) end
 end
 
@@ -908,7 +964,7 @@ function API.ReceiveJSON(jsonString)
     local success, packet = pcall(function()
         return HttpService:JSONDecode(jsonString)
     end)
-    
+
     if success and packet and packet.type and packet.data then
         if packet.data == "activate_termin_ai_silent" then
             states.aiActive = true
@@ -931,7 +987,7 @@ end
 -- --- INITIALIZATION PIPELINE ---
 function CommandProcessor.Init(uidefs)
     uiRef = uidefs
-    
+
     -- Autoload scriptLibrary package quietly on boot
     task.spawn(function()
         local success, lib = pcall(function()
@@ -1016,7 +1072,7 @@ function CommandProcessor.Init(uidefs)
                 hum.PlatformStand = false 
             end
         end
-        
+
         local hum = player.Character and player.Character:FindFirstChild("Humanoid")
         if hum and shieldInstance and shieldInstance.Parent then
             local hpPercent = hum.Health / hum.MaxHealth
@@ -1058,33 +1114,33 @@ function CommandProcessor.Init(uidefs)
         local lerpFactor = 0.15
         local clickCooldown = 0.1
         local lastClickTime = 0
-        
+
         while true do
             local dt = RunService.RenderStepped:Wait()
-            
+
             if states.aimbot and player.Character then
                 local tool = player.Character:FindFirstChildOfClass("Tool")
-                
+
                 if tool then
                     local targetChar = getClosestVisibleTarget()
-                    
+
                     if targetChar then
                         local targetHrp = targetChar:FindFirstChild("HumanoidRootPart")
                         local localHrp = player.Character:FindFirstChild("HumanoidRootPart")
-                        
+
                         if targetHrp and localHrp then
                             local predictedPos = getPredictedPosition(targetChar)
-                            
+
                             if predictedPos then
                                 local cameraPos = camera.CFrame.Position
-                                
+
                                 local targetCameraCF = CFrame.lookAt(cameraPos, predictedPos)
                                 camera.CFrame = camera.CFrame:Lerp(targetCameraCF, lerpFactor)
-                                
+
                                 local flatTargetPos = Vector3.new(predictedPos.X, localHrp.Position.Y, predictedPos.Z)
                                 local targetCharacterCF = CFrame.lookAt(localHrp.Position, flatTargetPos)
                                 localHrp.CFrame = localHrp.CFrame:Lerp(targetCharacterCF, lerpFactor)
-                                
+
                                 if tick() - lastClickTime >= clickCooldown then
                                     lastClickTime = tick()
                                     pcall(function()
@@ -1111,7 +1167,20 @@ function CommandProcessor.Init(uidefs)
                     if payload then 
                         states.lastScrapedData = payload 
                         if AiMemory then
-                            AiMemory.WriteMemory("last_scraped_data", payload)
+                            -- Generate a structured JSON wrapper payload
+                            local success, jsonPayload = pcall(function()
+                                return HttpService:JSONEncode({
+                                    event = "TELEMETRY_SCRAPE",
+                                    timestamp = os.time(),
+                                    sender = player.Name,
+                                    data = payload
+                                })
+                            end)
+                            if success then
+                                AiMemory.WriteMemory("last_scraped_data", jsonPayload)
+                            else
+                                AiMemory.WriteMemory("last_scraped_data", payload)
+                            end
                         end
                         silentDataFeed(payload) 
                     end
