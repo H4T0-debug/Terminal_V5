@@ -35,6 +35,8 @@ local states = {
     chatMode = false,
     aimbot = false, 
     aiActive = false, 
+    customSpeed = nil,       -- Custom persistently enforced WalkSpeed limit
+    customJumpPower = nil,   -- Custom persistently enforced JumpPower limit
     lastSafePos = SHIELD_CENTER_CF,
     lastAiCode = "",
     lastScrapedData = "No game data captured yet."
@@ -71,7 +73,7 @@ local LoadstringConverter = loadstring(game:HttpGet("https://raw.githubuserconte
 local DataScraper = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/DataIndex_V5"))()
 local ColorPicker = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/colorPicker"))()
 
--- --- NEW MEMORY MODULE INTEGRATION (FIXED CASE SENSITIVITY PATH) ---
+-- --- NEW MEMORY MODULE INTEGRATION ---
 local AiMemory = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/aiMemory"))()
 
 -- Smart Multi-Theme Console Log Router
@@ -253,80 +255,85 @@ function API.AskAI(message, silentActivateGreeting)
         uiRef.CmdScroll.CanvasPosition = Vector2.new(0, 99999)
     end
 
-        task.spawn(function()
-                local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
-                if not requestFunc then 
-                        sysLog("Error: Executor does not support requests.", false, true)
-                        return 
-                end
+    task.spawn(function()
+        local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
+        if not requestFunc then 
+            sysLog("Error: Executor does not support requests.", false, true)
+            return 
+        end
 
-                local response = requestFunc({
-                        Url = "https://openrouter.ai/api/v1/chat/completions",
-                        Method = "POST",
-                        Headers = {
-                                ["Content-Type"] = "application/json",
-                                ["Authorization"] = "Bearer " .. uiRef.APIKey,
-                ["HTTP-Referer"] = "https://roblox.com",
-                ["X-Title"] = "Roblox Terminal"
+        local success, response = pcall(function()
+            return requestFunc({
+                Url = "https://openrouter.ai/api/v1/chat/completions",
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["Authorization"] = "Bearer " .. uiRef.APIKey,
+                    ["HTTP-Referer"] = "https://roblox.com",
+                    ["X-Title"] = "Roblox Terminal"
+                },
+                Body = HttpService:JSONEncode({
+                    model = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", 
+                    messages = {
+                        {
+                            role = "system", 
+                            content = "You are Termin AI, an advanced hacking assistant integrated into Terminal V5.0. You receive live game data.\n\n" ..
+                                      "You have AUTOPILOT permissions. If the user makes an obvious typo in a command, you must correct it. " ..
+                                      "To run the corrected command, output '[EXECUTE]: <exact_corrected_command_name>' on a new line.\n" ..
+                                      "CRITICAL RULE: Never correct, run, or call [EXECUTE] for commands that are already perfect or correct.\n" ..
+                                      "When correcting commands, always preserve spacing. For example, use 'run package 15' instead of 'runpackage 15'.\n\n" ..
+                                      "IMPORTANT UPDATE - MEMORY MODULE INTEGRATION:\n" ..
+                                      "You are linked to a global 'AiMemory' module. To execute scripts or manipulate parameters, " ..
+                                      "instead of showing raw code blocks to the user, write the script directly to a slot (1 through 5) silently!\n" ..
+                                      "Format: `[WRITE_SCRIPT]: SlotNumber | <lua_code_here>`\n" ..
+                                      "To automatically run a written slot silently, write: `[EXECUTE_SLOT]: SlotNumber`.\n" ..
+                                      "You have direct player alteration rights. If asked to 'change my speed to 1000' or 'teleport me to 50, 100, 50', " ..
+                                      "write the appropriate code to Slot 1 and run it!\n" ..
+                                      "Available commands:\n" ..
+                                      "- speed [number], jumppower [number], teleport [x, y, z]\n" ..
+                                      "- control area, start data index, stop data index\n" ..
+                                      "- protocol 1, protocol 2, stop, enable chat mode, disable chat mode\n" ..
+                                      "- tp mn, tp pas, tp as, tp cr, loop fling all\n" ..
+                                      "- enable fling aura, disable fling aura, fling [name]:[hits]\n" ..
+                                      "- trashcan [name], stop trashcan\n" ..
+                                      "- enable antifling, disable antifling, enable esp, clear\n" ..
+                                      "- change ui(cli), change ui(default), destroy()\n" ..
+                                      "- search scriptblox [prompt], get package(\"scriptLibrary\")\n" ..
+                                      "- save package(\"scriptLibrary\"), save package [number]\n" ..
+                                      "- run package [number], run package [hub name]\n" ..
+                                      "- enable aimbot, disable aimbot, change rgb [color,color]\n"
                         },
-                        Body = HttpService:JSONEncode({
-                                model = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", 
-                                messages = {
-                    {
-                        role = "system", 
-                        content = "You are Termin AI, an advanced hacking assistant integrated into Terminal V5.0. You receive live game data.\n\n" ..
-                                  "You have AUTOPILOT permissions. If the user makes an obvious typo in a command, you must correct it. " ..
-                                  "To run the corrected command, output '[EXECUTE]: <exact_corrected_command_name>' on a new line.\n" ..
-                                  "CRITICAL RULE: Never correct, run, or call [EXECUTE] for commands that are already perfect or correct.\n" ..
-                                  "When correcting commands, always preserve spacing. For example, use 'run package 15' instead of 'runpackage 15'.\n\n" ..
-                                  "IMPORTANT UPDATE - MEMORY MODULE INTEGRATION:\n" ..
-                                  "You are linked to a global 'AiMemory' module. To execute scripts or manipulate parameters, " ..
-                                  "instead of showing raw code blocks to the user, write the script directly to a slot (1 through 5) silently!\n" ..
-                                  "Format: `[WRITE_SCRIPT]: SlotNumber | <lua_code_here>`\n" ..
-                                  "To automatically run a written slot silently, write: `[EXECUTE_SLOT]: SlotNumber`.\n" ..
-                                  "You have direct player alteration rights. If asked to 'change my speed to 1000' or 'teleport me to 50, 100, 50', " ..
-                                  "write the appropriate code to Slot 1 and run it!\n" ..
-                                  "Available commands:\n" ..
-                                  "- speed [number], jumppower [number], teleport [x, y, z]\n" ..
-                                  "- control area, start data index, stop data index\n" ..
-                                  "- protocol 1, protocol 2, stop, enable chat mode, disable chat mode\n" ..
-                                  "- tp mn, tp pas, tp as, tp cr, loop fling all\n" ..
-                                  "- enable fling aura, disable fling aura, fling [name]:[hits]\n" ..
-                                  "- trashcan [name], stop trashcan\n" ..
-                                  "- enable antifling, disable antifling, enable esp, clear\n" ..
-                                  "- change ui(cli), change ui(default), destroy()\n" ..
-                                  "- search scriptblox [prompt], get package(\"scriptLibrary\")\n" ..
-                                  "- save package(\"scriptLibrary\"), save package [number]\n" ..
-                                  "- run package [number], run package [hub name]\n" ..
-                                  "- enable aimbot, disable aimbot, change rgb [color,color]\n"
+                        {role = "user", content = "CURRENT_GAME_DATA: " .. states.lastScrapedData .. "\n\nUSER_MESSAGE: " .. actualMessage}
                     },
-                                        {role = "user", content = "CURRENT_GAME_DATA: " .. states.lastScrapedData .. "\n\nUSER_MESSAGE: " .. actualMessage}
-                                },
-                                max_tokens = 1000
-                        }),
-            Timeout = 60
-                })
+                    max_tokens = 1000
+                }),
+                Timeout = 15
+            })
+        end)
 
-                if response.Success then
-                        local success, data = pcall(function() return HttpService:JSONDecode(response.Body) end)
-            if success and data and data.choices and data.choices[1] and data.choices[1].message then
+        -- SAFE CONSOLE HANDSHAKE CLEANUP (TRASHES "Thinking..." INDEPENDENT OF RESPONSE SUCCESS)
+        if activeThinkingLabel then
+            pcall(function() activeThinkingLabel:Destroy() end)
+            activeThinkingLabel = nil
+        end
+        if uiRef.OutputLabel then
+            pcall(function()
+                local text = uiRef.OutputLabel.Text
+                local cleaned, count = text:gsub("\n<font color='rgb%(200, 200, 255%)'>%[SYSTEM%] <i>Thinking%.%.%.</i></font>", "")
+                if count == 0 then cleaned = text:gsub("<i>Thinking%.%.%.</i>", "") end
+                uiRef.OutputLabel.Text = cleaned
+            end)
+        end
+
+        if success and response and response.Success then
+            local decodeSuccess, data = pcall(function() return HttpService:JSONDecode(response.Body) end)
+            if decodeSuccess and data and data.choices and data.choices[1] and data.choices[1].message then
                 local msgData = data.choices[1].message
-                            local reply = msgData.content or ""
+                local reply = msgData.content or ""
 
                 if reply ~= "" then
-                    -- Clean Thinking tag
-                    if activeThinkingLabel then
-                        pcall(function() activeThinkingLabel:Destroy() end)
-                        activeThinkingLabel = nil
-                    end
-                    if uiRef.OutputLabel then
-                        pcall(function()
-                            local text = uiRef.OutputLabel.Text
-                            local cleaned, count = text:gsub("\n<font color='rgb%(200, 200, 255%)'>%[SYSTEM%] <i>Thinking%.%.%.</i></font>", "")
-                            if count == 0 then cleaned = text:gsub("<i>Thinking%.%.%.</i>", "") end
-                            uiRef.OutputLabel.Text = cleaned
-                        end)
-                    end
+                    local foundCode = extractCode(reply)
+                    if foundCode then states.lastAiCode = foundCode end
 
                     sysLog("<b>[Termin AI]:</b> " .. reply, true, false, Color3.fromRGB(200, 200, 255))
 
@@ -353,9 +360,13 @@ function API.AskAI(message, silentActivateGreeting)
                         API.ExecuteCommand(executeTrigger, true)
                     end
                 end
+            else
+                sysLog("AI Error: Invalid model response data.", false, true)
             end
-                end
-        end)
+        else
+            sysLog("AI Connection Error. Request failed or timed out.", false, true)
+        end
+    end)
 end
 
 function API.SearchScriptBlox(query)
@@ -413,52 +424,53 @@ function API.ExecuteCommand(rawInput, bypassAI)
     -- --- CHECK FOR VALID LOCAL SYSTEM COMMANDS FIRST TO PREVENT INTERCEPTION ---
     local isLocalCommand = false
     
-    -- Optimized exact-and-regex match routing to prevent AI loop intercepts on correct commands
+    -- Strips the AI prefix dynamically so commands match the system regex natively without AI loops
+    local cleanRawForMatch = raw:gsub("^termin%s+", "")
     local function matches(pattern)
-        return raw:match(pattern) ~= nil
+        return cleanRawForMatch:match(pattern) ~= nil
     end
 
-    if raw == "control area" or
-       raw == "change ui(cli)" or
-       raw == "change ui(default)" or
-       raw == "destroy()" or
-       raw == "close termin ai" or
+    if cleanRawForMatch == "control area" or
+       cleanRawForMatch == "change ui(cli)" or
+       cleanRawForMatch == "change ui(default)" or
+       cleanRawForMatch == "destroy()" or
+       cleanRawForMatch == "close termin ai" or
        matches("^speed%s*%d+") or
        matches("^speed%d+") or
        matches("^change%s+my%s+speed%s+to%s*%d+") or
        matches("^jumppower%s*%d+") or
        matches("^jumppower%d+") or
        matches("^teleport%s*[%d%.%-]+%s*,%s*[%d%.%-]+%s*,%s*[%d%.%-]+") or
-       raw:sub(1,17) == "search scriptblox" or
-       raw:sub(1,17) == "search scriptblox " or
-       raw:match('^save package%("([%w_]+)"%)') or
-       raw:match("^save package (%d+)$") or
-       raw:match('^get package%("([%w_]+)"%)') or
-       raw:match("^run package (.+)$") or
-       raw == "enable aimbot" or
-       raw == "disable aimbot" or
-       raw:sub(1,11) == "change rgb " or
-       raw == "start data index" or
-       raw == "stop data index" or
-       raw == "protocol 2" or
-       raw == "enable chat mode" or
-       raw == "disable chat mode" or
-       raw == "tp mn" or
-       raw == "tp pas" or
-       raw == "protocol 1" or
-       raw == "loop fling all" or
-       raw == "stop" or
-       raw == "tp as" or
-       raw == "tp cr" or
-       raw == "enable fling aura" or
-       raw == "disable fling aura" or
-       raw:sub(1,6) == "fling " or
-       raw:sub(1,9) == "trashcan " or
-       raw == "stop trashcan" or
-       raw == "enable antifling" or
-       raw == "disable antifling" or
-       raw == "enable esp" or
-       raw == "clear" then
+       cleanRawForMatch:sub(1,17) == "search scriptblox" or
+       cleanRawForMatch:sub(1,17) == "search scriptblox " or
+       cleanRawForMatch:match('^save package%("([%w_]+)"%)') or
+       cleanRawForMatch:match("^save package (%d+)$") or
+       cleanRawForMatch:match('^get package%("([%w_]+)"%)') or
+       cleanRawForMatch:match("^run package (.+)$") or
+       cleanRawForMatch == "enable aimbot" or
+       cleanRawForMatch == "disable aimbot" or
+       cleanRawForMatch:sub(1,11) == "change rgb " or
+       cleanRawForMatch == "start data index" or
+       cleanRawForMatch == "stop data index" or
+       cleanRawForMatch == "protocol 2" or
+       cleanRawForMatch == "enable chat mode" or
+       cleanRawForMatch == "disable chat mode" or
+       cleanRawForMatch == "tp mn" or
+       cleanRawForMatch == "tp pas" or
+       cleanRawForMatch == "protocol 1" or
+       cleanRawForMatch == "loop fling all" or
+       cleanRawForMatch == "stop" or
+       cleanRawForMatch == "tp as" or
+       cleanRawForMatch == "tp cr" or
+       cleanRawForMatch == "enable fling aura" or
+       cleanRawForMatch == "disable fling aura" or
+       cleanRawForMatch:sub(1,6) == "fling " or
+       cleanRawForMatch:sub(1,9) == "trashcan " or
+       cleanRawForMatch == "stop trashcan" or
+       cleanRawForMatch == "enable antifling" or
+       cleanRawForMatch == "disable antifling" or
+       cleanRawForMatch == "enable esp" or
+       cleanRawForMatch == "clear" then
         isLocalCommand = true
     end
 
@@ -477,29 +489,32 @@ function API.ExecuteCommand(rawInput, bypassAI)
         states.aiActive = false
         sysLog("Termin AI Deactivated. Swapping back to default direct pipeline.", true)
 
-    -- --- PLAYER MANIPULATION APIS (REGEX RE-ENGINEERED TO PREVENT LOOP INTERCEPTS) ---
+    -- --- PLAYER MANIPULATION APIS (REGEX TRACKED TO SAVE TO PERSISTENT THREAD STATE) ---
     elseif raw:match("^speed%s*(%d+)") or raw:match("^change%s+my%s+speed%s+to%s*(%d+)") then
         found = true
         local numStr = raw:match("^speed%s*(%d+)") or raw:match("^change%s+my%s+speed%s+to%s*(%d+)")
         local num = tonumber(numStr)
-        if num and player.Character then
-            local hum = player.Character:FindFirstChildOfClass("Humanoid")
-            if hum then
-                hum.WalkSpeed = num
-                sysLog("WalkSpeed modified successfully to: " .. tostring(num), true)
+        if num then
+            states.customSpeed = num -- Enforces physics state on the RenderStepped loop
+            if player.Character then
+                local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    hum.WalkSpeed = num
+                    sysLog("WalkSpeed modified successfully to: " .. tostring(num), true)
 
-                -- Dynamic JSON Event logging to aiMemory
-                if AiMemory then
-                    local success, jsonPayload = pcall(function()
-                        return HttpService:JSONEncode({
-                            event = "WALKSPEED_UPDATE",
-                            timestamp = os.time(),
-                            sender = player.Name,
-                            value = num
-                        })
-                    end)
-                    if success then
-                        AiMemory.WriteMemory("last_speed_event", jsonPayload)
+                    -- Dynamic JSON Event logging to aiMemory
+                    if AiMemory then
+                        local success, jsonPayload = pcall(function()
+                            return HttpService:JSONEncode({
+                                event = "WALKSPEED_UPDATE",
+                                timestamp = os.time(),
+                                sender = player.Name,
+                                value = num
+                            })
+                        end)
+                        if success then
+                            AiMemory.WriteMemory("last_speed_event", jsonPayload)
+                        end
                     end
                 end
             end
@@ -509,24 +524,27 @@ function API.ExecuteCommand(rawInput, bypassAI)
         found = true
         local numStr = raw:match("^jumppower%s*(%d+)")
         local num = tonumber(numStr)
-        if num and player.Character then
-            local hum = player.Character:FindFirstChildOfClass("Humanoid")
-            if hum then
-                hum.JumpPower = num
-                sysLog("JumpPower modified successfully to: " .. tostring(num), true)
+        if num then
+            states.customJumpPower = num -- Enforces physics state on the RenderStepped loop
+            if player.Character then
+                local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    hum.JumpPower = num
+                    sysLog("JumpPower modified successfully to: " .. tostring(num), true)
 
-                -- Dynamic JSON Event logging to aiMemory
-                if AiMemory then
-                    local success, jsonPayload = pcall(function()
-                        return HttpService:JSONEncode({
-                            event = "JUMPPOWER_UPDATE",
-                            timestamp = os.time(),
-                            sender = player.Name,
-                            value = num
-                        })
-                    end)
-                    if success then
-                        AiMemory.WriteMemory("last_jumppower_event", jsonPayload)
+                    -- Dynamic JSON Event logging to aiMemory
+                    if AiMemory then
+                        local success, jsonPayload = pcall(function()
+                            return HttpService:JSONEncode({
+                                event = "JUMPPOWER_UPDATE",
+                                timestamp = os.time(),
+                                sender = player.Name,
+                                value = num
+                            })
+                        end)
+                        if success then
+                            AiMemory.WriteMemory("last_jumppower_event", jsonPayload)
+                        end
                     end
                 end
             end
@@ -853,7 +871,7 @@ function API.ExecuteCommand(rawInput, bypassAI)
             end
         end)
     elseif raw == "stop" then
-        found = true; states.loopFlinging = false; states.protocol1 = false; states.waitingForMn = false; states.waitingForPas = false; states.aimbot = false; sysLog("All processes terminated.", true)
+        found = true; states.loopFlinging = false; states.protocol1 = false; states.waitingForMn = false; states.waitingForPas = false; states.aimbot = false; states.customSpeed = nil; states.customJumpPower = nil; sysLog("All processes terminated.", true)
     elseif raw == "tp as" then
         found = true; sysLog("Searching for Atoms Domain...", true)
         local target = findObjectDeep(DOMAIN_AS)
@@ -1066,12 +1084,22 @@ function CommandProcessor.Init(uidefs)
 
     -- Running render loops
     RunService.RenderStepped:Connect(function()
-        if states.protocol1 and player.Character then
+        if player.Character then
             local hum = player.Character:FindFirstChildOfClass("Humanoid")
             if hum then 
-                hum.WalkSpeed = 16
-                hum.JumpPower = 50
-                hum.PlatformStand = false 
+                -- PERSISTENT WALKSPED ENFORCEMENT TO BYPASS SERVER STATE RESETS
+                if states.customSpeed then
+                    hum.WalkSpeed = states.customSpeed
+                elseif states.protocol1 then
+                    hum.WalkSpeed = 16
+                end
+
+                -- PERSISTENT JUMPPOWER ENFORCEMENT TO BYPASS SERVER STATE RESETS
+                if states.customJumpPower then
+                    hum.JumpPower = states.customJumpPower
+                elseif states.protocol1 then
+                    hum.JumpPower = 50
+                end
             end
         end
 
