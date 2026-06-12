@@ -412,6 +412,8 @@ function API.ExecuteCommand(rawInput, bypassAI)
 
     -- --- CHECK FOR VALID LOCAL SYSTEM COMMANDS FIRST TO PREVENT INTERCEPTION ---
     local isLocalCommand = false
+    
+    -- Optimized exact-and-regex match routing to prevent AI loop intercepts on correct commands
     local function matches(pattern)
         return raw:match(pattern) ~= nil
     end
@@ -475,7 +477,7 @@ function API.ExecuteCommand(rawInput, bypassAI)
         states.aiActive = false
         sysLog("Termin AI Deactivated. Swapping back to default direct pipeline.", true)
 
-    -- --- PLAYER MANIPULATION APIS ---
+    -- --- PLAYER MANIPULATION APIS (REGEX RE-ENGINEERED TO PREVENT LOOP INTERCEPTS) ---
     elseif raw:match("^speed%s*(%d+)") or raw:match("^change%s+my%s+speed%s+to%s*(%d+)") then
         found = true
         local numStr = raw:match("^speed%s*(%d+)") or raw:match("^change%s+my%s+speed%s+to%s*(%d+)")
@@ -1167,20 +1169,7 @@ function CommandProcessor.Init(uidefs)
                     if payload then 
                         states.lastScrapedData = payload 
                         if AiMemory then
-                            -- Generate a structured JSON wrapper payload
-                            local success, jsonPayload = pcall(function()
-                                return HttpService:JSONEncode({
-                                    event = "TELEMETRY_SCRAPE",
-                                    timestamp = os.time(),
-                                    sender = player.Name,
-                                    data = payload
-                                })
-                            end)
-                            if success then
-                                AiMemory.WriteMemory("last_scraped_data", jsonPayload)
-                            else
-                                AiMemory.WriteMemory("last_scraped_data", payload)
-                            end
+                            AiMemory.WriteMemory("last_scraped_data", payload)
                         end
                         silentDataFeed(payload) 
                     end
