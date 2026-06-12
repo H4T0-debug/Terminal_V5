@@ -5,11 +5,11 @@ local AiMemory = {
     Scripts = {}   -- Storage limit: 5 slots (for runnable scripts written by Termin AI)
 }
 
--- Write value to memory (Enforces the 100-slot cap)
+-- Write value to memory (Enforces the 100-slot cap and decodes JSON if applicable)
 function AiMemory.WriteMemory(key, value)
     local count = 0
     for _ in pairs(AiMemory.Memory) do count = count + 1 end
-    
+
     if count >= 100 and not AiMemory.Memory[key] then
         -- Evict oldest memory slot to preserve buffer space
         local oldestKey = nil
@@ -19,8 +19,19 @@ function AiMemory.WriteMemory(key, value)
         end
         if oldestKey then AiMemory.Memory[oldestKey] = nil end
     end
-    
-    AiMemory.Memory[key] = value
+
+    -- Automatically detect and decode incoming JSON strings
+    local processedValue = value
+    if typeof(value) == "string" then
+        local success, decoded = pcall(function()
+            return HttpService:JSONDecode(value)
+        end)
+        if success then
+            processedValue = decoded
+        end
+    end
+
+    AiMemory.Memory[key] = processedValue
     return true
 end
 
