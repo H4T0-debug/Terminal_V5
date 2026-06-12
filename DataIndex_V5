@@ -2,85 +2,69 @@ local DataScraper = {}
 local indexingEnabled = false
 local Players = game:GetService("Players")
 local LogService = game:GetService("LogService")
+local HttpService = game:GetService("HttpService") -- Required for JSON conversion
 local player = Players.LocalPlayer
-
-local function getChildNames(obj)
-    local children = obj:GetChildren()
-    local names = {}
-    for i = 1, math.min(#children, 10) do
-        table.insert(names, children[i].Name)
-    end
-    return #names > 0 and table.concat(names, ", ") .. (#children > 10 and "..." or "") or "None"
-end
 
 function DataScraper.IsIndexingEnabled()
     return indexingEnabled
 end
 
--- Improved signal detection logic
+-- New Helper: Packages up real-time metadata into a clean JSON packet for aiMemory
+function DataScraper.SendStateToMemory(actionName, detailedTable)
+    if not _G.aiMemory or type(_G.aiMemory.WriteSlot) ~= "function" then return end
+    
+    local packet = {
+        event = actionName or "DATA_LOG",
+        sender = "DataIndex_V5",
+        timestamp = os.time(),
+        player = player.Name,
+        details = detailedTable or {}
+    }
+    
+    local success, jsonString = pcall(function()
+        return HttpService:JSONEncode(packet)
+    end)
+    
+    if success then
+        _G.aiMemory.WriteSlot(jsonString)
+    else
+        warn("[DATA INDEX]: Failed to encode state string.")
+    end
+end
+
 local function processMessage(message)
     local displayName = player.DisplayName
-    -- Use string.find for a "fuzzy" match in case of timestamps or console formatting
-    -- Looking for: "DisplayName:UTF-70:freemium"
     if message:find(displayName) then
         if message:find("UTF%-70:freemium") then
             indexingEnabled = true
             warn("[DATA INDEX]: SIGNAL RECEIVED - STARTING SCRAPER")
+            
+            -- Log the signal event as JSON to memory
+            DataScraper.SendStateToMemory("SCRAPER_START", {status = "Active"})
         elseif message:find("UTF%-71:free") then
             indexingEnabled = false
             warn("[DATA INDEX]: SIGNAL RECEIVED - STOPPING SCRAPER")
+            
+            -- Log the signal event as JSON to memory
+            DataScraper.SendStateToMemory("SCRAPER_STOP", {status = "Inactive"})
         end
     end
 end
 
 function DataScraper.ListenForSignals()
-    -- Method 1: Real-time listener
     LogService.MessageOut:Connect(function(message, messageType)
         processMessage(message)
     end)
-    
-    -- Method 2: Periodic history check (Backup in case MessageOut is missed)
+
     task.spawn(function()
         while true do
             local logs = LogService:GetLogHistory()
-            -- We check the last few logs to see if our signal is there
             for i = #logs, math.max(1, #logs - 5), -1 do
                 processMessage(logs[i].message)
             end
             task.wait(1) 
         end
     end)
-end
-
-function DataScraper.GetHierarchyGenerator()
-    -- Pre-calculate descendants to avoid heavy calls in the loop
-    local instances = game:GetDescendants()
-    local index = 0
-    
-    return function()
-        index = index + 1
-        local obj = instances[index]
-        
-        -- If we hit the end, restart or return nil
-        if not obj then return nil end
-        
-        -- Filter out noise (Physics/Touch sensors)
-        if obj:IsA("MeshPart") or obj:IsA("TouchTransmitter") or obj:IsA("BasePart") and obj.Transparency == 1 then 
-            return DataScraper.GetHierarchyGenerator()() -- Skip and get next
-        end
-        
-        local success, result = pcall(function()
-            return string.format(
-                "Data type: %s\nName: %s\nParent: %s\nChild modules: %s",
-                obj.ClassName,
-                obj.Name,
-                obj.Parent and obj.Parent.Name or "NULL",
-                getChildNames(obj)
-            )
-        end)
-        
-        return success and result or nil
-    end
 end
 
 return DataScraper
