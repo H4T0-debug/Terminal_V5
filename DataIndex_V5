@@ -5,7 +5,7 @@ local LogService = game:GetService("LogService")
 local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 
--- Dynamically connect to the local AI Memory workspace using loadstring
+-- Dynamically connect to local AI Memory module
 local AiMemory = nil
 pcall(function()
     AiMemory = loadstring(game:HttpGet("https://raw.githubusercontent.com/H4T0-debug/Terminal_V5/refs/heads/main/aiMemory"))()
@@ -85,7 +85,7 @@ function DataScraper.GetHierarchyGenerator()
         end
 
         local success, result = pcall(function()
-            -- Serialize hierarchy object data into structured JSON
+            -- Format scraped data properties into structured JSON payload
             local dataTable = {
                 className = obj.ClassName,
                 name = obj.Name,
